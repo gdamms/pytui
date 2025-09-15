@@ -19,10 +19,17 @@ def next_border(self, event):
         self.border = Element.BORDER_NONE
 
 
+
+
 def main():
     with PyTUI() as tui:
+        def quit(self, event):
+            if event.key == 'q' or event.key == 'ESCAPE':
+                tui.quit()
+
         tui.root_element.text = "Hello, World!"
-        tui.root_element.border = Element.BORDER_SINGLE
+        tui.root_element.border = Element.BORDER_NONE
+        tui.root_element.key_event_listeners.append(quit)
 
         el = Element()
         el.x = 10

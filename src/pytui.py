@@ -17,6 +17,7 @@ class PyTUI:
 
         self.render_time = 0
         self.refresh_rate = refresh_rate
+        self.running = False
 
     def start(self):
         enable_input_capture()
@@ -32,6 +33,9 @@ class PyTUI:
         self.renderer.primary_context()
         self.renderer.blit()
         restore_terminal()
+
+    def quit(self):
+        self.running = False
 
     def __enter__(self):
         self.start()
@@ -55,7 +59,8 @@ class PyTUI:
                 raise RuntimeError(f"Unknown input event type: {type(input_event)}")
 
     def main_loop(self):
-        while True:
+        self.running = True
+        while self.running:
             self.renderer.clear_screen()
             self.root_element.render(self.renderer)
             current_time = time.time()
