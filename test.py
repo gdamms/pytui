@@ -4,6 +4,21 @@ from src.pytui import PyTUI
 from src.element import Element
 
 
+def next_border(self, event):
+    borders = [
+        Element.BORDER_NONE,
+        Element.BORDER_SINGLE,
+        Element.BORDER_DOUBLE,
+        Element.BORDER_ROUNDED,
+        Element.BORDER_HEAVY,
+    ]
+    if self.border in borders:
+        index = borders.index(self.border)
+        self.border = borders[(index + 1) % len(borders)]
+    else:
+        self.border = Element.BORDER_NONE
+
+
 def main():
     with PyTUI() as tui:
         tui.root_element.text = "Hello, World!"
@@ -14,6 +29,7 @@ def main():
         el.y = 3
         el.text = "This is a test"
         el.border = Element.BORDER_DOUBLE
+        el.mouse_event_listeners.append(next_border)
         tui.root_element.add_child(el)
 
         el2 = Element()
@@ -30,9 +46,7 @@ def main():
         el3.border = Element.BORDER_HEAVY
         el2.add_child(el3)
 
-        while True:
-            tui.render()
-            time.sleep(0.1)
+        tui.main_loop()
 
 
 if __name__ == "__main__":

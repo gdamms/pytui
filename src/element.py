@@ -3,6 +3,7 @@ import os
 
 BorderType = list[str] | None
 
+
 class Element:
 
     WRAP_CONTENT = -1
@@ -24,6 +25,9 @@ class Element:
         self.text = ""
         self.border: BorderType = Element.BORDER_NONE
         self.childs = []
+
+        self.key_event_listeners = []
+        self.mouse_event_listeners = []
 
     def add_child(self, child):
         child.parent = self
@@ -114,3 +118,16 @@ class Element:
 
         for child in self.children:
             child.render(renderer)
+
+    def get_all_children(self):
+        yield self
+        for child in self.children:
+            yield from child.get_all_children()
+
+    def on_key_event(self, event):
+        for listener in self.key_event_listeners:
+            listener(self, event)
+
+    def on_mouse_event(self, event):
+        for listener in self.mouse_event_listeners:
+            listener(self, event)
