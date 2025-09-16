@@ -1,7 +1,7 @@
 import time
 
-from src.pytui import PyTUI
-from src.element import Element
+from pytui.pytui import PyTUI
+from pytui.element import Element
 
 
 def next_border(self, event):

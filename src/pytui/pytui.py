@@ -58,7 +58,7 @@ class PyTUI:
             else:
                 raise RuntimeError(f"Unknown input event type: {type(input_event)}")
 
-    def main_loop(self):
+    def run(self):
         self.running = True
         while self.running:
             self.renderer.clear_screen()
