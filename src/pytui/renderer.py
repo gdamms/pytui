@@ -34,7 +34,7 @@ class Renderer:
         self.write(ANSI.CLEAR_SCREEN)
 
     def move_cursor(self, x, y):
-        self.write(ANSI.MOVE_CURSOR.format(y, x))
+        self.write(ANSI.MOVE_CURSOR.format(y + 1, x + 1))  # ANSI is 1-indexed
 
     def invert_colors(self):
         self.write(ANSI.INVERT_COLORS)

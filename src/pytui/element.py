@@ -16,8 +16,8 @@ class Element:
     BORDER_HEAVY: BorderType = ['┏', '━', '┓', '┃', '┛', '━', '┗', '┃']
 
     def __init__(self):
-        self.x = 1
-        self.y = 1
+        self.x = 0
+        self.y = 0
         self.width = Element.WRAP_CONTENT
         self.height = Element.WRAP_CONTENT
         self.parent = None
@@ -42,6 +42,34 @@ class Element:
         return None
 
     @property
+    def max_width(self):
+        if self.parent is not None:
+            return self.parent.max_content_width
+        else:
+            return os.get_terminal_size().columns
+
+    @property
+    def max_height(self):
+        if self.parent is not None:
+            return self.parent.max_content_height
+        else:
+            return os.get_terminal_size().lines
+
+    @property
+    def max_content_width(self):
+        max_width = self.max_width
+        if self.border is not None:
+            max_width -= 2
+        return max_width
+
+    @property
+    def max_content_height(self):
+        max_height = self.max_height
+        if self.border is not None:
+            max_height -= 2
+        return max_height
+
+    @property
     def content_width(self):
         min_width = len(self.text)  # TODO: better calculate text width (wrap, ansi, newlines, etc)
         for child in self.children:
@@ -64,7 +92,7 @@ class Element:
             return width
         elif self.width == Element.FILL_PARENT:
             if self.parent is not None:
-                return self.parent.content_width
+                return self.parent.max_content_width
             else:
                 return os.get_terminal_size().columns
         else:
@@ -79,19 +107,33 @@ class Element:
             return height
         elif self.height == Element.FILL_PARENT:
             if self.parent is not None:
-                return self.parent.content_height
+                return self.parent.max_content_height
             else:
                 return os.get_terminal_size().lines
         else:
             return self.height
+
+    @property
+    def content_x(self):
+        x = self.x
+        if self.border is not None:
+            x += 1
+        return x
+
+    @property
+    def content_y(self):
+        y = self.y
+        if self.border is not None:
+            y += 1
+        return y
 
     def render(self, renderer):
         x = self.x
         y = self.y
 
         if self.parent is not None:
-            x += self.parent.x
-            y += self.parent.y
+            x += self.parent.content_x
+            y += self.parent.content_y
 
         if self.border is not None:
             renderer.move_cursor(x, y)
