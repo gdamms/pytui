@@ -53,7 +53,7 @@ def main():
         el3.border = Element.BORDER_HEAVY
         el2.add_child(el3)
 
-        tui.main_loop()
+        tui.run()
 
 
 if __name__ == "__main__":

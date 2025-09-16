@@ -1,7 +1,13 @@
 import os
+import sys
 
 
 BorderType = list[str] | None
+
+
+def log(x):
+    print(f"LOG: {x}", file=sys.stderr)
+    return x
 
 
 class Element:
@@ -15,6 +21,9 @@ class Element:
     BORDER_ROUNDED: BorderType = ['╭', '─', '╮', '│', '╯', '─', '╰', '│']
     BORDER_HEAVY: BorderType = ['┏', '━', '┓', '┃', '┛', '━', '┗', '┃']
 
+    STYLE_DEFAULT = 0
+    STYLE_INVERTED = 1
+
     def __init__(self):
         self.x = 0
         self.y = 0
@@ -25,9 +34,11 @@ class Element:
         self.text = ""
         self.border: BorderType = Element.BORDER_NONE
         self.childs = []
+        self.style = Element.STYLE_DEFAULT
 
         self.key_event_listeners = []
         self.mouse_event_listeners = []
+        self.render_listeners = []
 
     def add_child(self, child):
         child.parent = self
@@ -41,12 +52,20 @@ class Element:
             return child
         return None
 
+    def clear_children(self):
+        for child in self.children:
+            child.parent = None
+        self.children = []
+
     @property
     def max_width(self):
+        if self.width > 0:
+            return self.width
+
         if self.parent is not None:
             return self.parent.max_content_width
-        else:
-            return os.get_terminal_size().columns
+
+        return os.get_terminal_size().columns
 
     @property
     def max_height(self):
@@ -127,7 +146,54 @@ class Element:
             y += 1
         return y
 
+    @property
+    def actual_width(self):
+        if self.width > 0:
+            return self.width
+        if self.width == Element.FILL_PARENT:
+            return self.max_width
+        if self.width == Element.WRAP_CONTENT:
+            width = self.content_width
+            if self.border is not None:
+                width += 2
+            return width
+        raise RuntimeError("Invalid width")
+
+    @property
+    def actual_height(self):
+        if self.height > 0:
+            return self.height
+        if self.height == Element.FILL_PARENT:
+            return self.max_height
+        if self.height == Element.WRAP_CONTENT:
+            height = self.content_height
+            if self.border is not None:
+                height += 2
+            return height
+        raise RuntimeError("Invalid height")
+
+    @property
+    def actual_content_width(self):
+        width = self.actual_width
+        if self.border is not None:
+            width -= 2
+        return width
+
+    @property
+    def actual_content_height(self):
+        height = self.actual_height
+        if self.border is not None:
+            height -= 2
+        return height
+
     def render(self, renderer):
+        for listener in self.render_listeners:
+            listener(self)
+
+        renderer.reset_colors()
+        if self.style == Element.STYLE_INVERTED:
+            renderer.invert_colors()
+
         x = self.x
         y = self.y
 
@@ -156,7 +222,7 @@ class Element:
             y += 1
 
         renderer.move_cursor(x, y)
-        renderer.write(self.text)
+        renderer.write(self.text.ljust(self.actual_content_width))
 
         for child in self.children:
             child.render(renderer)

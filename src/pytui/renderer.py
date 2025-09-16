@@ -42,12 +42,12 @@ class Renderer:
     def revert_colors(self):
         self.write(ANSI.REVERT_COLORS)
 
-    def reset_color(self):
+    def reset_colors(self):
         self.write(ANSI.RESET_COLOR)
 
     def color(self, foreground=None, background=None):
         if foreground is None and background is None:
-            self.reset_color()
+            self.reset_colors()
             return
 
         if foreground in ANSI.FOREGROUND_COLORS:

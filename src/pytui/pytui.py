@@ -8,7 +8,7 @@ from .input_manager import KeyEvent, MouseEvent
 
 
 class PyTUI:
-    def __init__(self, refresh_rate=1):
+    def __init__(self, refresh_rate: float = 1):
         self.renderer = Renderer()
 
         self.root_element = Element()
@@ -64,7 +64,7 @@ class PyTUI:
             self.renderer.clear_screen()
             self.root_element.render(self.renderer)
             current_time = time.time()
-            time.sleep(max(0, self.refresh_rate - (current_time - self.render_time)))
+            time.sleep(max(0, 1 / self.refresh_rate - (current_time - self.render_time)))
             self.render_time = current_time
             self.renderer.blit()
             self.handle_input()
