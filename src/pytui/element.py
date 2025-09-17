@@ -103,6 +103,15 @@ class Element:
         return min_height
 
     @property
+    def text_width(self):
+        # TODO: better calculate text width (wrap, ansi, etc)
+        return max((len(line) for line in self.text.split('\n')), default=0) if self.text else 0
+
+    @property
+    def text_height(self):
+        return self.text.count('\n') + 1 if self.text else 0  # TODO: better calculate text height (wrap, ansi, etc)
+
+    @property
     def border_width(self):
         if self.width == Element.WRAP_CONTENT:
             width = self.content_width
@@ -221,11 +230,17 @@ class Element:
             x += 1
             y += 1
 
-        renderer.move_cursor(x, y)
-        renderer.write(self.text.ljust(self.actual_content_width))
+        self.render_text(renderer, x, y)
 
         for child in self.children:
             child.render(renderer)
+
+    def render_text(self, renderer, x, y):
+        for i, line in enumerate(self.text.split('\n')):
+            if i >= self.actual_content_height:
+                break
+            renderer.move_cursor(x, y + i)
+            renderer.write(line[:self.actual_content_width])
 
     def get_all_children(self):
         yield self
