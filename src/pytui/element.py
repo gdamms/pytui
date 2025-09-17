@@ -36,10 +36,41 @@ class Element:
         self.border: BorderType = Element.BORDER_NONE
         self.childs = []
         self.style = Element.STYLE_NORMAL
+        self._focused = False
 
         self.key_event_listeners = []
         self.mouse_event_listeners = []
         self.render_listeners = []
+
+    @property
+    def root(self):
+        if self.parent is None:
+            return self
+        return self.parent.root
+
+    @property
+    def focused(self):
+        return self._focused
+
+    def focus(self):
+        if self._focused:
+            return
+        for el in self.root.tree:
+            el._focused = False
+        self._focused = True
+
+    def blur(self):
+        if not self._focused:
+            return
+        if self.parent is None:
+            return
+        self.parent.focus()
+
+    @property
+    def tree(self):
+        yield self
+        for child in self.children:
+            yield from child.tree
 
     def add_child(self, child):
         child.parent = self
