@@ -240,7 +240,7 @@ class Element:
             if i >= self.actual_content_height:
                 break
             renderer.move_cursor(x, y + i)
-            renderer.write(line[:self.actual_content_width])
+            renderer.write(line[:self.actual_content_width].ljust(self.actual_content_width))
 
     def get_all_children(self):
         yield self
