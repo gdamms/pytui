@@ -21,8 +21,9 @@ class Element:
     BORDER_ROUNDED: BorderType = ['╭', '─', '╮', '│', '╯', '─', '╰', '│']
     BORDER_HEAVY: BorderType = ['┏', '━', '┓', '┃', '┛', '━', '┗', '┃']
 
-    STYLE_DEFAULT = 0
+    STYLE_NORMAL = 0
     STYLE_INVERTED = 1
+    STYLE_HIDDEN = 2
 
     def __init__(self):
         self.x = 0
@@ -34,7 +35,7 @@ class Element:
         self.text = ""
         self.border: BorderType = Element.BORDER_NONE
         self.childs = []
-        self.style = Element.STYLE_DEFAULT
+        self.style = Element.STYLE_NORMAL
 
         self.key_event_listeners = []
         self.mouse_event_listeners = []
@@ -196,6 +197,9 @@ class Element:
         return height
 
     def render(self, renderer):
+        if self.style == Element.STYLE_HIDDEN:
+            return
+
         for listener in self.render_listeners:
             listener(self)
 
