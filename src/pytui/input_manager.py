@@ -100,8 +100,8 @@ class MouseEvent:
             return None  # not a mouse event
 
         button_code = int(match.group('button'))
-        x = int(match.group('x'))
-        y = int(match.group('y'))
+        x = int(match.group('x')) - 1  # convert to 0-based
+        y = int(match.group('y')) - 1  # convert to 0-based
 
         if button_code == 64:
             return MouseEvent(MouseEvent.SCROLL_UP, x, y, MouseEvent.BUTTON_MIDDLE)

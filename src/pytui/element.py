@@ -1,6 +1,8 @@
 import os
 import sys
 
+from pytui.input_manager import MouseEvent
+
 
 BorderType = list[str] | None
 
@@ -41,6 +43,9 @@ class Element:
         self.key_event_listeners = []
         self.mouse_event_listeners = []
         self.render_listeners = []
+        self.focus_listeners = []
+        self.focus_lost_listeners = []
+        self.blur_listeners = []
 
     @property
     def root(self):
@@ -56,15 +61,17 @@ class Element:
         if self._focused:
             return
         for el in self.root.tree:
-            el._focused = False
+            el.blur()
         self._focused = True
+
+        self.on_focus()
 
     def blur(self):
         if not self._focused:
             return
-        if self.parent is None:
-            return
-        self.parent.focus()
+        self._focused = False
+
+        self.on_blur()
 
     @property
     def tree(self):
@@ -289,3 +296,34 @@ class Element:
     def on_mouse_event(self, event):
         for listener in self.mouse_event_listeners:
             listener(self, event)
+
+    def on_focus(self):
+        for listener in self.focus_listeners:
+            listener(self)
+
+    def on_blur(self):
+        for listener in self.blur_listeners:
+            listener(self)
+
+    def propagate_mouse_event(self, event):
+        if self.style == Element.STYLE_HIDDEN:
+            return False
+
+        if not (0 <= event.x < self.actual_width and
+                0 <= event.y < self.actual_height):
+            return False
+
+        for child in reversed(self.children):
+            local_event = MouseEvent(
+                event.event_type,
+                event.x - child.x,
+                event.y - child.y,
+                event.button
+            )
+            if child.propagate_mouse_event(local_event):
+                return True
+
+        # no child handled the event, so handle it ourselves
+        self.focus()
+        self.on_mouse_event(event)
+        return True

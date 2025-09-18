@@ -50,11 +50,12 @@ class PyTUI:
         for input_event in inputs:
             if isinstance(input_event, KeyEvent):
                 for element in self.root_element.get_all_children():
+                    if not element.focused:
+                        continue
                     element.on_key_event(input_event)
             elif isinstance(input_event, MouseEvent):
-                # TODO: optimize by only sending to elements under the mouse cursor
-                for element in self.root_element.get_all_children():
-                    element.on_mouse_event(input_event)
+                print(input_event, file=sys.stderr)
+                self.root_element.propagate_mouse_event(input_event)
             else:
                 raise RuntimeError(f"Unknown input event type: {type(input_event)}")
 
