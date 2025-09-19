@@ -80,6 +80,8 @@ class Element:
             yield from child.tree
 
     def add_child(self, child):
+        if child.parent is not None:
+            child.parent.remove_child(child)
         child.parent = self
         self.children.append(child)
         return child
@@ -278,7 +280,9 @@ class Element:
             child.render(renderer)
 
     def render_text(self, renderer, x, y):
-        for i, line in enumerate(self.text.split('\n')):
+        lines = self.text.split('\n')
+        lines += [''] * (self.actual_content_height - len(lines))
+        for i, line in enumerate(lines):
             if i >= self.actual_content_height:
                 break
             renderer.move_cursor(x, y + i)

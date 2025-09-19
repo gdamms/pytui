@@ -1,3 +1,4 @@
+import os
 import sys
 
 from .ansi import ANSI
@@ -17,6 +18,10 @@ class Renderer:
         textIO.write(self._buffer)
         textIO.flush()
         self.clear()
+
+    def get_terminal_size(self):
+        size = os.get_terminal_size()
+        return size.columns, size.lines
 
     def hide_cursor(self):
         self.write(ANSI.HIDE_CURSOR)

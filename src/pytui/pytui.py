@@ -18,6 +18,12 @@ class PyTUI:
         self.render_time = 0
         self.refresh_rate = refresh_rate
         self.running = False
+        self.terminal_size = self.renderer.get_terminal_size()
+
+        self.key_event_listeners = []
+        self.mouse_event_listeners = []
+        self.render_listeners = []
+        self.terminal_resize_listeners = []
 
     def start(self):
         enable_input_capture()
@@ -49,12 +55,15 @@ class PyTUI:
         inputs = get_inputs()
         for input_event in inputs:
             if isinstance(input_event, KeyEvent):
+                for listener in self.key_event_listeners:
+                    listener(self, input_event)
                 for element in self.root_element.get_all_children():
                     if not element.focused:
                         continue
                     element.on_key_event(input_event)
             elif isinstance(input_event, MouseEvent):
-                print(input_event, file=sys.stderr)
+                for listener in self.mouse_event_listeners:
+                    listener(self, input_event)
                 self.root_element.propagate_mouse_event(input_event)
             else:
                 raise RuntimeError(f"Unknown input event type: {type(input_event)}")
@@ -68,4 +77,11 @@ class PyTUI:
             time.sleep(max(0, 1 / self.refresh_rate - (current_time - self.render_time)))
             self.render_time = current_time
             self.renderer.blit()
+            for listener in self.render_listeners:
+                listener(self)
+            new_terminal_size = self.renderer.get_terminal_size()
+            if new_terminal_size != self.terminal_size:
+                self.terminal_size = new_terminal_size
+                for listener in self.terminal_resize_listeners:
+                    listener(self, new_terminal_size)
             self.handle_input()
