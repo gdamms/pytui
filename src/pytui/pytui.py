@@ -3,13 +3,14 @@ import sys
 
 from .renderer import Renderer
 from .element import Element
-from .input_manager import enable_input_capture, restore_terminal, enable_mouse, disable_mouse, get_inputs
+from .input_manager import InputCapture
 from .input_manager import KeyEvent, MouseEvent
 
 
 class PyTUI:
     def __init__(self, refresh_rate: float = 1):
         self.renderer = Renderer()
+        self.input_capture = InputCapture()
 
         self.root_element = Element()
         self.root_element.width = Element.FILL_PARENT
@@ -25,34 +26,26 @@ class PyTUI:
         self.render_listeners = []
         self.terminal_resize_listeners = []
 
-    def start(self):
-        enable_input_capture()
-        self.renderer.secondary_context()
-        self.renderer.hide_cursor()
-        self.renderer.clear_screen()
-        self.renderer.blit()
-        enable_mouse()
-
-    def stop(self):
-        disable_mouse()
-        self.renderer.show_cursor()
-        self.renderer.primary_context()
-        self.renderer.blit()
-        restore_terminal()
-
     def quit(self):
         self.running = False
 
     def __enter__(self):
-        self.start()
+        self.input_capture.__enter__()
+        self.renderer.secondary_context()
+        self.renderer.hide_cursor()
+        self.renderer.clear_screen()
+        self.renderer.blit()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.stop()
+        self.renderer.show_cursor()
+        self.renderer.primary_context()
+        self.renderer.blit()
+        self.input_capture.__exit__(exc_type, exc_val, exc_tb)
         return False  # don't suppress exceptions
 
     def handle_input(self):
-        inputs = get_inputs()
+        inputs = self.input_capture.get_inputs()
         for input_event in inputs:
             if isinstance(input_event, KeyEvent):
                 for listener in self.key_event_listeners:

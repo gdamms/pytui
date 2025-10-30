@@ -5,72 +5,6 @@ import re
 import os
 
 
-class TerminalSettings:
-    def __init__(self, fd: int, old_settings):
-        self.fd = fd
-        self.old_settings = old_settings
-
-
-old_terminal_settings = None
-
-
-def enable_input_capture():
-    global old_terminal_settings
-    if old_terminal_settings is not None:
-        raise RuntimeError("Input capture already enabled")
-
-    # save old terminal settings
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-
-    # set new terminal settings
-    new_settings = termios.tcgetattr(sys.stdin)
-    new_settings[3] = new_settings[3] & ~(termios.ECHO | termios.ICANON)  # lflags
-    new_settings[6][termios.VMIN] = 0  # cc
-    new_settings[6][termios.VTIME] = 0  # cc
-
-    # apply new terminal settings
-    termios.tcsetattr(sys.stdin, termios.TCSAFLUSH, new_settings)
-    new_settings[6][termios.VTIME] = 0  # cc
-
-    # store old settings for later restoration
-    old_terminal_settings = TerminalSettings(fd, old_settings)
-
-
-def restore_terminal():
-    global old_terminal_settings
-    if old_terminal_settings is None:
-        raise RuntimeError("Input capture not enabled, nothing to restore")
-
-    termios.tcsetattr(sys.stdin, termios.TCSAFLUSH, old_terminal_settings.old_settings)
-
-
-def enable_mouse():
-    sys.stdout.write("\x1b[?1000h")
-    sys.stdout.write("\x1b[?1006h")
-    sys.stdout.flush()
-
-
-def disable_mouse():
-    sys.stdout.write("\x1b[?1000l")
-    sys.stdout.write("\x1b[?1006l")
-    sys.stdout.flush()
-
-
-def get_input_code():
-    global old_terminal_settings
-    if old_terminal_settings is None:
-        raise RuntimeError("Input capture not enabled, cannot get key")
-    if select.select([sys.stdin], [], [], 0.1)[0]:
-        ch_set = ''
-        ch = os.read(old_terminal_settings.fd, 1)
-        while ch is not None and ch != b'':
-            ch_set += ch.decode('ISO-8859-1')
-            ch = os.read(old_terminal_settings.fd, 1)
-        return ch_set
-    return None
-
-
 class MouseEvent:
 
     PRESS = 'PRESS'
@@ -178,24 +112,100 @@ def split_input_codes(input_codes: str):
     return [match.group(0) for match in matches] if matches is not None else []
 
 
-def get_inputs():
-    input_codes = get_input_code()
-    if input_codes is None:
-        return []
+class TerminalSettings:
+    def __init__(self, settings):
+        self.settings = settings
 
-    codes = split_input_codes(input_codes)
-    events = []
-    for code in codes:
-        mouse_event = MouseEvent.from_input_code(code)
-        if mouse_event is not None:
-            events.append(mouse_event)
-            continue
+    @staticmethod
+    def from_current():
+        settings = termios.tcgetattr(sys.stdin)
+        return TerminalSettings(settings)
 
-        key_event = KeyEvent.from_input_code(code)
-        if key_event is not None:
-            events.append(key_event)
-            continue
+    def apply(self):
+        termios.tcsetattr(sys.stdin, termios.TCSAFLUSH, self.settings)
 
-        print(f"Unrecognized input code: {repr(code)}", file=sys.stderr)  # for debugging
+    def __getitem__(self, item):
+        return self.settings[item]
 
-    return events
+    def __setitem__(self, item, value):
+        self.settings[item] = value
+
+
+class InputCapture:
+    def __init__(self):
+        self.old_settings = None
+
+    def enable_input_capture(self):
+        if self.old_settings is not None:
+            raise RuntimeError("Input capture already enabled")
+
+        self.old_settings = TerminalSettings.from_current()
+        new_settings = TerminalSettings.from_current()
+
+        # set new terminal settings
+        new_settings[3] = new_settings[3] & ~(termios.ECHO | termios.ICANON)  # lflags
+        new_settings[6][termios.VMIN] = 0  # cc
+        new_settings[6][termios.VTIME] = 0  # cc
+
+        new_settings.apply()
+
+    def restore_terminal(self):
+        if self.old_settings is None:
+            raise RuntimeError("Input capture not enabled, nothing to restore")
+
+        self.old_settings.apply()
+        self.old_settings = None
+
+    def enable_mouse(self):
+        sys.stdout.write("\x1b[?1000h")
+        sys.stdout.write("\x1b[?1006h")
+        sys.stdout.flush()
+
+    def disable_mouse(self):
+        sys.stdout.write("\x1b[?1000l")
+        sys.stdout.write("\x1b[?1006l")
+        sys.stdout.flush()
+
+    def __enter__(self):
+        self.enable_input_capture()
+        self.enable_mouse()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.disable_mouse()
+        self.restore_terminal()
+        return False  # don't suppress exceptions
+
+    def get_input_code(self):
+        if self.old_settings is None:
+            raise RuntimeError("Input capture not enabled, cannot get key")
+        if select.select([sys.stdin], [], [], 0.1)[0]:
+            ch_set = ''
+            ch = os.read(sys.stdin.fileno(), 1)
+            while ch is not None and ch != b'':
+                ch_set += ch.decode('ISO-8859-1')
+                ch = os.read(sys.stdin.fileno(), 1)
+            return ch_set
+        return None
+
+    def get_inputs(self):
+        input_codes = self.get_input_code()
+        if input_codes is None:
+            return []
+
+        codes = split_input_codes(input_codes)
+        events = []
+        for code in codes:
+            mouse_event = MouseEvent.from_input_code(code)
+            if mouse_event is not None:
+                events.append(mouse_event)
+                continue
+
+            key_event = KeyEvent.from_input_code(code)
+            if key_event is not None:
+                events.append(key_event)
+                continue
+
+            print(f"Unrecognized input code: {repr(code)}", file=sys.stderr)  # for debugging
+
+        return events
