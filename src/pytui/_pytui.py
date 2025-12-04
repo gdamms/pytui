@@ -1,10 +1,11 @@
 import time
 import sys
 
-from .renderer import Renderer
-from .element import Element
-from .input_manager import InputCapture
-from .input_manager import KeyEvent, MouseEvent
+from ._renderer import Renderer
+from ._element import Element
+from .input_capture import InputCapture
+from .key_event import KeyEvent
+from .mouse_event import MouseEvent
 
 
 class PyTUI:

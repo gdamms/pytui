@@ -1,7 +1,7 @@
 import os
 import sys
 
-from pytui.input_manager import MouseEvent
+from .mouse_event import MouseEvent
 
 
 BorderType = list[str] | None
