@@ -1,9 +1,7 @@
 import re
 
-from .event import Event
 
-
-class KeyEvent(Event):
+class KeyEvent():
 
     CODES = {
         '\x1b[A': 'UP',

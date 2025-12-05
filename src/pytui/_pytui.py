@@ -1,7 +1,6 @@
 import time
-import sys
 
-from ._renderer import Renderer
+from .renderer import Renderer
 from ._element import Element
 from .input_capture import InputCapture
 from .key_event import KeyEvent

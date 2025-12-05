@@ -20,5 +20,4 @@ class TerminalSettings:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         termios.tcsetattr(sys.stdin.fileno(), termios.TCSAFLUSH, self._saved_settings)
-
         return False  # don't suppress exceptions

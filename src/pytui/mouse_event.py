@@ -1,9 +1,7 @@
 import re
 
-from .event import Event
 
-
-class MouseEvent(Event):
+class MouseEvent():
 
     PRESS = 'PRESS'
     RELEASE = 'RELEASE'

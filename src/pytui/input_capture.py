@@ -4,7 +4,7 @@ import select
 import os
 
 from .terminal_settings import TerminalSettings
-from .event import Event, split_input_codes
+from .event import split_input_codes, input_code_to_event
 
 
 class InputCapture:
@@ -50,6 +50,6 @@ class InputCapture:
             return []
 
         codes = split_input_codes(input_codes)
-        events = [Event.from_input_code(code) for code in codes]
+        events = [input_code_to_event(code) for code in codes]
 
         return events
