@@ -3,6 +3,7 @@ import re
 from pytui.mouse_event import MouseEvent
 from pytui.key_event import KeyEvent
 
+
 Event = KeyEvent | MouseEvent
 
 
@@ -16,12 +17,12 @@ def split_input_codes(input_codes: str):
 
 
 def input_code_to_event(input_code: str) -> Event:
-        mouse_event = MouseEvent.from_input_code(input_code)
-        if mouse_event is not None:
-            return mouse_event
+    mouse_event = MouseEvent.from_input_code(input_code)
+    if mouse_event is not None:
+        return mouse_event
 
-        key_event = KeyEvent.from_input_code(input_code)
-        if key_event is not None:
-            return key_event
+    key_event = KeyEvent.from_input_code(input_code)
+    if key_event is not None:
+        return key_event
 
-        raise ValueError(f"Unrecognized input code: {repr(input_code)}")
+    raise ValueError(f"Unrecognized input code: {repr(input_code)}")

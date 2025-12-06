@@ -1,14 +1,27 @@
 from .style import Style
 from .renderer import Renderer
+from .event import Event
+from .mouse_event import MouseEvent
+from .key_event import KeyEvent
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .pytui import PyTUI
 
 
 class Element:
-    def __init__(self):
-        self.style = Style()
+    def __init__(self, pytui: 'PyTUI'):
+        self.pytui = pytui
+
+        self._style: Style = Style()
+        self._focus_style: None | Style = None
+
         self.text = ""
 
         self._parent: 'None | Element' = None
         self._children = []
+
+        self._focus = False
 
     def add_child(self, child: 'Element'):
         child._parent = self
@@ -21,11 +34,24 @@ class Element:
 
     @property
     def style(self):
+        if self._focus and self._focus_style is not None:
+            return self._focus_style
         return self._style
 
-    @style.setter
-    def style(self, value: Style):
-        self._style = value
+    def set_style(self, style: None | Style = None, **kwargs):
+        if style is not None:
+            self._style = style
+        for key, value in kwargs.items():
+            setattr(self._style, key, value)
+
+    def set_focus_style(self, style: None | Style = None, **kwargs):
+        if style is not None:
+            self._focus_style = Style(**style.__dict__)
+        else:
+            if self._focus_style is None:
+                self._focus_style = Style()
+        for key, value in kwargs.items():
+            setattr(self._focus_style, key, value)
 
     @property
     def text(self):
@@ -186,3 +212,40 @@ class Element:
 
         for child in self._children:
             child.render(renderer)
+
+    def focus(self):
+        self.pytui.focus(self)
+
+    def unfocus(self):
+        self._focus = False
+
+    def on_focus(self):
+        self._focus = True
+
+    def handle_event(self, event: Event):
+        if isinstance(event, MouseEvent):
+            self.handle_mouse_event(event)
+            return
+
+        if isinstance(event, KeyEvent):
+            self.handle_key_event(event)
+            return
+
+        raise NotImplementedError()
+
+    def handle_mouse_event(self, event: MouseEvent):
+        x, y = self.outer_pos
+        width, height = self.outer_dim
+        if not (x <= event.x < x + width and y <= event.y < y + height):
+            return  # event not in this element
+
+        for child in self._children:
+            if child.handle_event(event):
+                return
+
+        self.focus()
+
+    def handle_key_event(self, event: KeyEvent):
+        if not self._focus:
+            return  # not focused, ignore key events
+        pass  # to be implemented

@@ -4,7 +4,7 @@ import select
 import os
 
 from .terminal_settings import TerminalSettings
-from .event import split_input_codes, input_code_to_event
+from .event import split_input_codes, input_code_to_event, Event
 
 
 class InputCapture:
@@ -12,7 +12,7 @@ class InputCapture:
         self._term_settings = TerminalSettings()
         self._term_settings[3] = self._term_settings[3] & ~(termios.ECHO | termios.ICANON)  # lflags
         self._term_settings[6][termios.VMIN] = 0  # cc
-        self._term_settings[6][termios.VTIME] = 0  #
+        self._term_settings[6][termios.VTIME] = 0  # cc
 
     def enable_mouse(self):
         sys.stdout.write("\x1b[?1000h")
@@ -44,7 +44,7 @@ class InputCapture:
             return ch_set
         return None
 
-    def get_inputs(self):
+    def get_inputs(self) -> list[Event]:
         input_codes = self.get_input_code()
         if input_codes is None:
             return []
