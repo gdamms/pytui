@@ -1,57 +1,90 @@
-import time
-
-from pytui._pytui import PyTUI
-from pytui._element import Element
-
-
-def next_border(self, event):
-    borders = [
-        Element.BORDER_NONE,
-        Element.BORDER_SINGLE,
-        Element.BORDER_DOUBLE,
-        Element.BORDER_ROUNDED,
-        Element.BORDER_HEAVY,
-    ]
-    if self.border in borders:
-        index = borders.index(self.border)
-        self.border = borders[(index + 1) % len(borders)]
-    else:
-        self.border = Element.BORDER_NONE
-
-
+from pytui.pytui import PyTUI
+from pytui.style import Style
 
 
 def main():
     with PyTUI() as tui:
-        def quit(self, event):
-            if event.key == 'q' or event.key == 'ESCAPE':
-                tui.quit()
+        list_container = tui.create_element()
+        btn_container = tui.create_element()
+        new_btn = tui.create_element()
+        del_btn = tui.create_element()
+        list_el = tui.create_element()
+        list_title = tui.create_element()
+        list_item = tui.create_element()
+        editor_area = tui.create_element()
+        editor_title = tui.create_element()
 
-        tui.root_element.text = "Hello, World!"
-        tui.root_element.border = Element.BORDER_NONE
-        tui.root_element.key_event_listeners.append(quit)
+        tui.root_element.add_child(list_container)
+        tui.root_element.add_child(editor_area)
 
-        el = Element()
-        el.x = 10
-        el.y = 3
-        el.text = "This is a test"
-        el.border = Element.BORDER_DOUBLE
-        el.mouse_event_listeners.append(next_border)
-        tui.root_element.add_child(el)
+        list_container.add_child(btn_container)
+        list_container.add_child(list_el)
 
-        el2 = Element()
-        el2.x = 5
-        el2.y = 6
-        el2.text = "Another element"
-        el2.border = Element.BORDER_ROUNDED
-        tui.root_element.add_child(el2)
+        btn_container.add_child(new_btn)
+        btn_container.add_child(del_btn)
 
-        el3 = Element()
-        el3.x = 20
-        el3.y = 8
-        el3.text = "Element with heavy border"
-        el3.border = Element.BORDER_HEAVY
-        el2.add_child(el3)
+        list_el.add_child(list_title)
+        list_el.add_child(list_item)
+
+        editor_area.add_child(editor_title)
+
+        new_btn.text = "New"
+        del_btn.text = "Delete"
+        list_title.text = "Files"
+        editor_title.text = "Edit area"
+
+        tui.root_element.set_style(
+            border=Style.BORDER_NONE,
+            width=Style.FILL_PARENT,
+            height=Style.FILL_PARENT,
+            direction=Style.DIRECTION_HORIZONTAL,
+        )
+        list_container.set_style(
+            border=Style.BORDER_NONE,
+            width=30,
+            height=Style.FILL_PARENT,
+            direction=Style.DIRECTION_VERTICAL,
+        )
+        btn_container.set_style(
+            border=Style.BORDER_NONE,
+            width=Style.FILL_PARENT,
+            height=1,
+            direction=Style.DIRECTION_HORIZONTAL,
+        )
+        new_btn.set_style(
+            border=Style.BORDER_NONE,
+            width=15,
+            height=Style.FILL_PARENT
+        )
+        del_btn.set_style(
+            border=Style.BORDER_NONE,
+            width=15,
+            height=Style.FILL_PARENT
+        )
+        list_el.set_style(
+            border=Style.BORDER_SINGLE,
+            width=Style.FILL_PARENT,
+            height=Style.FILL_PARENT,
+            direction=Style.DIRECTION_VERTICAL,
+        )
+        list_title.set_style(
+            border=Style.BORDER_NONE,
+            margin_top=-1,
+        )
+        list_item.set_style(
+            border=Style.BORDER_NONE,
+            width=Style.FILL_PARENT,
+            height=1,
+        )
+        editor_area.set_style(
+            border=Style.BORDER_SINGLE,
+            width=60,
+            height=Style.FILL_PARENT,
+        )
+        editor_title.set_style(
+            border=Style.BORDER_NONE,
+            margin_top=-1,
+        )
 
         tui.run()
 

@@ -4,6 +4,7 @@ from .renderer import Renderer
 from .element import Element
 from .input_capture import InputCapture
 from .event import Event
+from .style import Style
 
 
 class PyTUI:
@@ -11,6 +12,11 @@ class PyTUI:
         self.renderer = Renderer()
         self.input_capture = InputCapture()
         self.root_element = Element(self)
+        self.root_element.set_style(
+            border=Style.BORDER_NONE,
+            width=Style.FILL_PARENT,
+            height=Style.FILL_PARENT
+        )
 
         self.render_time = 0
         self.refresh_rate = refresh_rate

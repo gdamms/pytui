@@ -1,15 +1,16 @@
-BorderType = list[str] | None
+BorderType = list[str]
 VisibleType = int
 WrapType = int
 PositionType = int
 DirectionType = int
 JustifyType = int
 AlignType = int
+SizingType = int
 
 
 class Style:
 
-    BORDER_NONE: BorderType = None
+    BORDER_NONE: BorderType = []
     BORDER_INVISIBLE: BorderType = [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ']
     BORDER_SINGLE: BorderType = ['┌', '─', '┐', '│', '┘', '─', '└', '│']
     BORDER_DOUBLE: BorderType = ['╔', '═', '╗', '║', '╝', '═', '╚', '║']
@@ -33,6 +34,11 @@ class Style:
 
     ALIGN_START: AlignType = 0
     ALIGN_CENTER: AlignType = 1
+
+    SIZING_CONTENT: SizingType = 0
+    SIZING_INNER: SizingType = 1
+    SIZING_BORDER: SizingType = 2
+    SIZING_OUTER: SizingType = 3
 
     def __init__(self, **kwargs):
         self.border = Style.BORDER_SINGLE
@@ -60,5 +66,6 @@ class Style:
         self.direction = Style.DIRECTION_VERTICAL
         self.justify_content = Style.JUSTIFY_START
         self.align_items = Style.ALIGN_START
+        self.sizing = Style.SIZING_BORDER
         for k, v in kwargs.items():
             setattr(self, k, v)
