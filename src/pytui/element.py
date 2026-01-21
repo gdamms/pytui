@@ -5,53 +5,22 @@ from .renderer import Renderer
 from .event import Event
 from .mouse_event import MouseEvent
 from .key_event import KeyEvent
+from .computed_style import ComputedStyle
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .pytui import PyTUI
 
 
-"""
-Sizing hierarchy:
-- OUTER: includes margin
-- BORDER: includes border
-- INNER: includes padding
-- CONTENT: only content
-
-Sizing modes:
-- SIZING_OUTER: width/height refer to outer dimensions
-- SIZING_BORDER: width/height refer to border dimensions
-- SIZING_INNER: width/height refer to inner dimensions
-- SIZING_CONTENT: width/height refer to content dimensions
-
-Sizing values:
-- WRAP_CONTENT: size to fit content
-- FILL_PARENT: size to fill parent available space, weighted if multiple siblings use FILL_PARENT
-- absolute size: int value
-- relative size: float value (>0.0) as a fraction of parent content size
-
-Sizing resolution:
-- compute minimum content size: (from root to leaves)
-    - compute childs minimum content sizes
-    - add them along the layout direction, take max along cross direction
-    - compute text size
-    - take max of text size and children size
-- iterate to compute actual sizes: (from root to leaves)
-    - absolute sizes: use as-is
-    - fit content depends on childs -> if child depends on parent (self) size, use minimum content size (of self)
-    - relative sizes: depends on parent size
-- on more iteration for fill parent: depends on parent and siblings (parent size - sum of absolute, relative, wrap_content sizes; distribute remaining space according to weights)
-"""
-
-
 class Element:
     def __init__(self, pytui: 'PyTUI'):
-        self.pytui = pytui
+        self._pytui = pytui
 
-        self._style: Style = Style()
-        self._focus_style: None | Style = None
+        self._style: Style = Style(self)
+        self._focus_style: Style = Style(self)
+        self._computed_style: None | ComputedStyle = None
 
-        self.text = ""
+        self._text = ""
 
         self._parent: 'None | Element' = None
         self._children = []
@@ -67,12 +36,6 @@ class Element:
             self._children.remove(child)
             child._parent = None
 
-    @property
-    def style(self):
-        if self._focus and self._focus_style is not None:
-            return self._focus_style
-        return self._style
-
     def set_style(self, style: None | Style = None, **kwargs):
         if style is not None:
             self._style = style
@@ -81,12 +44,17 @@ class Element:
 
     def set_focus_style(self, style: None | Style = None, **kwargs):
         if style is not None:
-            self._focus_style = Style(**style.__dict__)
-        else:
-            if self._focus_style is None:
-                self._focus_style = Style()
+            self._focus_style = style
         for key, value in kwargs.items():
             setattr(self._focus_style, key, value)
+
+    @property
+    def computed_style(self):
+        if self._computed_style is not None:
+            return self._computed_style
+        current_style = self._focus_style if self._focus else self._style
+        self._computed_style = ComputedStyle(current_style)
+        return self._computed_style
 
     @property
     def text(self):
@@ -97,74 +65,269 @@ class Element:
         self._text = value
         self._lines = value.splitlines()
 
-    @property
-    def outer_pos(self):
-        if self.style.position == Style.POSITION_ABSOLUTE:
-            x = self.style.left
-            y = self.style.top
-            return x, y
+    # @property
+    # def outer_pos(self):
+    #     if self.style.position == Style.POSITION_ABSOLUTE:
+    #         x = self.style.left
+    #         y = self.style.top
+    #         return x, y
 
-        if self._parent is None:
-            return 0, 0
+    #     if self._parent is None:
+    #         return 0, 0
 
-        x, y = self._parent.content_pos
-        if self._parent.style.direction == Style.DIRECTION_VERTICAL:
-            y_offset = 0
-            for sibling in self._parent._children:
-                if sibling is self:
-                    break
-                y_offset += sibling.outer_dim[1]
-            y += y_offset
+    #     x, y = self._parent.content_pos
+    #     if self._parent.style.direction == Style.DIRECTION_VERTICAL:
+    #         y_offset = 0
+    #         for sibling in self._parent._children:
+    #             if sibling is self:
+    #                 break
+    #             y_offset += sibling.outer_dim[1]
+    #         y += y_offset
 
-            if self._parent.style.align_items == Style.ALIGN_CENTER:
-                x += (self._parent.content_width - self.outer_dim[0]) // 2
-            elif self._parent.style.align_items == Style.ALIGN_START:
-                x += 0
-            else:
-                raise NotImplementedError()
-        elif self._parent.style.direction == Style.DIRECTION_HORIZONTAL:
-            x_offset = 0
-            for sibling in self._parent._children:
-                if sibling is self:
-                    break
-                x_offset += sibling.outer_dim[0]
-            x += x_offset
+    #         if self._parent.style.align_items == Style.ALIGN_CENTER:
+    #             x += (self._parent.content_width - self.outer_dim[0]) // 2
+    #         elif self._parent.style.align_items == Style.ALIGN_START:
+    #             x += 0
+    #         else:
+    #             raise NotImplementedError()
+    #     elif self._parent.style.direction == Style.DIRECTION_HORIZONTAL:
+    #         x_offset = 0
+    #         for sibling in self._parent._children:
+    #             if sibling is self:
+    #                 break
+    #             x_offset += sibling.outer_dim[0]
+    #         x += x_offset
 
-            if self._parent.style.align_items == Style.ALIGN_CENTER:
-                y += (self._parent.content_height - self.outer_dim[1]) // 2
-            elif self._parent.style.align_items == Style.ALIGN_START:
-                y += 0
-            else:
-                raise NotImplementedError()
-        else:
-            raise NotImplementedError()
+    #         if self._parent.style.align_items == Style.ALIGN_CENTER:
+    #             y += (self._parent.content_height - self.outer_dim[1]) // 2
+    #         elif self._parent.style.align_items == Style.ALIGN_START:
+    #             y += 0
+    #         else:
+    #             raise NotImplementedError()
+    #     else:
+    #         raise NotImplementedError()
 
-        return x, y
+    #     return x, y
 
-    @property
-    def border_pos(self):
-        x, y = self.outer_pos
-        x += self.style.margin_left
-        y += self.style.margin_top
-        return x, y
+    # @property
+    # def border_pos(self):
+    #     x, y = self.outer_pos
+    #     x += self.style.margin_left
+    #     y += self.style.margin_top
+    #     return x, y
 
-    @property
-    def inner_pos(self):
-        x, y = self.border_pos
-        if self.style.border != Style.BORDER_NONE:
-            x += 1
-            y += 1
-        return x, y
+    # @property
+    # def inner_pos(self):
+    #     x, y = self.border_pos
+    #     if self.style.border != Style.BORDER_NONE:
+    #         x += 1
+    #         y += 1
+    #     return x, y
 
-    @property
-    def content_pos(self):
-        x, y = self.inner_pos
-        x += self.style.padding_left
-        y += self.style.padding_top
-        return x, y
+    # @property
+    # def content_pos(self):
+    #     x, y = self.inner_pos
+    #     x += self.style.padding_left
+    #     y += self.style.padding_top
+    #     return x, y
 
-    @property
-    def content_width(self):
+    # @property
+    # def content_width(self):
+    #     text_width = max((len(line) for line in self._lines), default=0)
+
+    #     def agg(x):
+    #         if self.style.direction == Style.DIRECTION_HORIZONTAL:
+    #             return sum(x, start=0)
+    #         elif self.style.direction == Style.DIRECTION_VERTICAL:
+    #             return max(x, default=0)
+    #         else:
+    #             raise NotImplementedError()
+    #     children_width = agg((child.outer_dim[0] for child in self._children))
+    #     return max(text_width, children_width)
+
+    # @property
+    # def content_height(self):
+    #     def agg(x):
+    #         if self.style.direction == Style.DIRECTION_HORIZONTAL:
+    #             return max(x, default=0)
+    #         elif self.style.direction == Style.DIRECTION_VERTICAL:
+    #             return sum(x, start=0)
+    #         else:
+    #             raise NotImplementedError()
+    #     children_height = agg((child.outer_dim[1] for child in self._children))
+    #     return max(len(self._lines), children_height)
+
+    # @property
+    # def content_dim(self):
+    #     if self.style.sizing == Style.SIZING_CONTENT:
+    #         if self.style.width == Style.WRAP_CONTENT:
+    #             width = self.min_content_dim[0]
+    #         elif self.style.width == Style.FILL_PARENT:
+    #             width = self.max_content_dim[0]
+    #         else:
+    #             width = self.style.width
+
+    #         if self.style.height == Style.WRAP_CONTENT:
+    #             height = self.min_content_dim[1]
+    #         elif self.style.height == Style.FILL_PARENT:
+    #             height = self.max_content_dim[1]
+    #         else:
+    #             height = self.style.height
+
+    #         return width, height
+
+    #     width, height = self.inner_dim
+    #     width -= self.style.padding_left + self.style.padding_right
+    #     height -= self.style.padding_top + self.style.padding_bottom
+    #     return width, height
+
+    # @property
+    # def inner_dim(self):
+    #     if self.style.sizing == Style.SIZING_INNER:
+    #         if self.style.width == Style.WRAP_CONTENT:
+    #             width = self.min_inner_dim[0]
+    #         elif self.style.width == Style.FILL_PARENT:
+    #             width = self.max_inner_dim[0]
+    #         else:
+    #             width = self.style.width
+
+    #         if self.style.height == Style.WRAP_CONTENT:
+    #             height = self.min_inner_dim[1]
+    #         elif self.style.height == Style.FILL_PARENT:
+    #             height = self.max_inner_dim[1]
+    #         else:
+    #             height = self.style.height
+
+    #         return width, height
+
+    #     if self.style.sizing == Style.SIZING_CONTENT:
+    #         width, height = self.content_dim
+    #         width += self.style.padding_left + self.style.padding_right
+    #         height += self.style.padding_top + self.style.padding_bottom
+    #         return width, height
+    #     elif self.style.sizing == Style.SIZING_BORDER or self.style.sizing == Style.SIZING_OUTER:
+    #         width, height = self.border_dim
+    #         if self.style.sizing == Style.SIZING_BORDER:
+    #             width -= 2 if self.style.border != Style.BORDER_NONE else 0
+    #             height -= 2 if self.style.border != Style.BORDER_NONE else 0
+    #         return width, height
+    #     else:
+    #         raise NotImplementedError(f"Unknown sizing mode: {self.style.sizing}")
+
+    # @property
+    # def border_dim(self):
+    #     if self.style.sizing == Style.SIZING_BORDER:
+    #         if self.style.width == Style.WRAP_CONTENT:
+    #             width = self.min_border_dim[0]
+    #         elif self.style.width == Style.FILL_PARENT:
+    #             width = self.max_border_dim[0]
+    #         else:
+    #             width = self.style.width
+
+    #         if self.style.height == Style.WRAP_CONTENT:
+    #             height = self.min_border_dim[1]
+    #         elif self.style.height == Style.FILL_PARENT:
+    #             height = self.max_border_dim[1]
+    #         else:
+    #             height = self.style.height
+
+    #         return width, height
+
+    #     if self.style.sizing == Style.SIZING_INNER or self.style.sizing == Style.SIZING_CONTENT:
+    #         width, height = self.inner_dim
+    #         if self.style.sizing == Style.SIZING_INNER:
+    #             width += 2 if self.style.border != Style.BORDER_NONE else 0
+    #             height += 2 if self.style.border != Style.BORDER_NONE else 0
+    #         return width, height
+    #     elif self.style.sizing == Style.SIZING_OUTER:
+    #         width, height = self.outer_dim
+    #         if self.style.sizing == Style.SIZING_OUTER:
+    #             width -= self.style.margin_left + self.style.margin_right
+    #             height -= self.style.margin_top + self.style.margin_bottom
+    #         return width, height
+    #     else:
+    #         raise NotImplementedError(f"Unknown sizing mode: {self.style.sizing}")
+
+    # @property
+    # def outer_dim(self):
+    #     if self.style.sizing == Style.SIZING_OUTER:
+    #         if self.style.width == Style.WRAP_CONTENT:
+    #             width = self.min_outer_dim[0]
+    #         elif self.style.width == Style.FILL_PARENT:
+    #             width = self.max_outer_dim[0]
+    #         else:
+    #             width = self.style.width
+
+    #         if self.style.height == Style.WRAP_CONTENT:
+    #             height = self.min_outer_dim[1]
+    #         elif self.style.height == Style.FILL_PARENT:
+    #             height = self.max_outer_dim[1]
+    #         else:
+    #             height = self.style.height
+
+    #         return width, height
+
+    #     width, height = self.border_dim
+    #     width += self.style.margin_left + self.style.margin_right
+    #     height += self.style.margin_top + self.style.margin_bottom
+    #     return width, height
+
+    # @property
+    # def max_content_dim(self):
+    #     width, height = self.max_inner_dim
+    #     width -= self.style.padding_left + self.style.padding_right
+    #     height -= self.style.padding_top + self.style.padding_bottom
+    #     return width, height
+
+    # @property
+    # def max_inner_dim(self):
+    #     width, height = self.max_border_dim
+    #     if self.style.border != Style.BORDER_NONE:
+    #         width -= 2
+    #         height -= 2
+    #     return width, height
+
+    # @property
+    # def max_border_dim(self):
+    #     width, height = self.max_outer_dim
+    #     width -= self.style.margin_left + self.style.margin_right
+    #     height -= self.style.margin_top + self.style.margin_bottom
+    #     return width, height
+
+    # @property
+    # def max_outer_dim(self):
+    #     if self._parent is None:
+    #         term_size = os.get_terminal_size()
+    #         return term_size.columns, term_size.lines
+    #     return self._parent.max_content_dim  # TODO: account for siblings? add weighting?
+
+    # @property
+    # def min_outer_dim(self):
+    #     width, height = self.border_dim
+    #     width += self.style.margin_left + self.style.margin_right
+    #     height += self.style.margin_top + self.style.margin_bottom
+    #     return width, height
+
+    # @property
+    # def min_border_dim(self):
+    #     width, height = self.min_inner_dim
+    #     width += self.style.margin_left + self.style.margin_right
+    #     height += self.style.margin_top + self.style.margin_bottom
+    #     return width, height
+
+    # @property
+    # def min_inner_dim(self):
+    #     width, height = self.min_content_dim
+    #     if self.style.border != Style.BORDER_NONE:
+    #         width += 2
+    #         height += 2
+    #     return width, height
+
+    # @property
+    # def min_content_dim(self):
+    #     return self.content_width, self.content_height
+
+    def compute_min_content_width(self):
         text_width = max((len(line) for line in self._lines), default=0)
 
         def agg(x):
@@ -174,11 +337,12 @@ class Element:
                 return max(x, default=0)
             else:
                 raise NotImplementedError()
-        children_width = agg((child.outer_dim[0] for child in self._children))
-        return max(text_width, children_width)
+        children_width = agg((child.compute_min_content_width() for child in self._children))
 
-    @property
-    def content_height(self):
+        self._min_content_width = max(text_width, children_width)
+        return self._min_content_width
+
+    def compute_min_content_height(self):
         def agg(x):
             if self.style.direction == Style.DIRECTION_HORIZONTAL:
                 return max(x, default=0)
@@ -186,178 +350,10 @@ class Element:
                 return sum(x, start=0)
             else:
                 raise NotImplementedError()
-        children_height = agg((child.outer_dim[1] for child in self._children))
-        return max(len(self._lines), children_height)
+        children_height = agg((child.compute_min_content_height() for child in self._children))
 
-    @property
-    def content_dim(self):
-        if self.style.sizing == Style.SIZING_CONTENT:
-            if self.style.width == Style.WRAP_CONTENT:
-                width = self.min_content_dim[0]
-            elif self.style.width == Style.FILL_PARENT:
-                width = self.max_content_dim[0]
-            else:
-                width = self.style.width
-
-            if self.style.height == Style.WRAP_CONTENT:
-                height = self.min_content_dim[1]
-            elif self.style.height == Style.FILL_PARENT:
-                height = self.max_content_dim[1]
-            else:
-                height = self.style.height
-
-            return width, height
-
-        width, height = self.inner_dim
-        width -= self.style.padding_left + self.style.padding_right
-        height -= self.style.padding_top + self.style.padding_bottom
-        return width, height
-
-    @property
-    def inner_dim(self):
-        if self.style.sizing == Style.SIZING_INNER:
-            if self.style.width == Style.WRAP_CONTENT:
-                width = self.min_inner_dim[0]
-            elif self.style.width == Style.FILL_PARENT:
-                width = self.max_inner_dim[0]
-            else:
-                width = self.style.width
-
-            if self.style.height == Style.WRAP_CONTENT:
-                height = self.min_inner_dim[1]
-            elif self.style.height == Style.FILL_PARENT:
-                height = self.max_inner_dim[1]
-            else:
-                height = self.style.height
-
-            return width, height
-
-        if self.style.sizing == Style.SIZING_CONTENT:
-            width, height = self.content_dim
-            width += self.style.padding_left + self.style.padding_right
-            height += self.style.padding_top + self.style.padding_bottom
-            return width, height
-        elif self.style.sizing == Style.SIZING_BORDER or self.style.sizing == Style.SIZING_OUTER:
-            width, height = self.border_dim
-            if self.style.sizing == Style.SIZING_BORDER:
-                width -= 2 if self.style.border != Style.BORDER_NONE else 0
-                height -= 2 if self.style.border != Style.BORDER_NONE else 0
-            return width, height
-        else:
-            raise NotImplementedError(f"Unknown sizing mode: {self.style.sizing}")
-
-    @property
-    def border_dim(self):
-        if self.style.sizing == Style.SIZING_BORDER:
-            if self.style.width == Style.WRAP_CONTENT:
-                width = self.min_border_dim[0]
-            elif self.style.width == Style.FILL_PARENT:
-                width = self.max_border_dim[0]
-            else:
-                width = self.style.width
-
-            if self.style.height == Style.WRAP_CONTENT:
-                height = self.min_border_dim[1]
-            elif self.style.height == Style.FILL_PARENT:
-                height = self.max_border_dim[1]
-            else:
-                height = self.style.height
-
-            return width, height
-
-        if self.style.sizing == Style.SIZING_INNER or self.style.sizing == Style.SIZING_CONTENT:
-            width, height = self.inner_dim
-            if self.style.sizing == Style.SIZING_INNER:
-                width += 2 if self.style.border != Style.BORDER_NONE else 0
-                height += 2 if self.style.border != Style.BORDER_NONE else 0
-            return width, height
-        elif self.style.sizing == Style.SIZING_OUTER:
-            width, height = self.outer_dim
-            if self.style.sizing == Style.SIZING_OUTER:
-                width -= self.style.margin_left + self.style.margin_right
-                height -= self.style.margin_top + self.style.margin_bottom
-            return width, height
-        else:
-            raise NotImplementedError(f"Unknown sizing mode: {self.style.sizing}")
-
-    @property
-    def outer_dim(self):
-        if self.style.sizing == Style.SIZING_OUTER:
-            if self.style.width == Style.WRAP_CONTENT:
-                width = self.min_outer_dim[0]
-            elif self.style.width == Style.FILL_PARENT:
-                width = self.max_outer_dim[0]
-            else:
-                width = self.style.width
-
-            if self.style.height == Style.WRAP_CONTENT:
-                height = self.min_outer_dim[1]
-            elif self.style.height == Style.FILL_PARENT:
-                height = self.max_outer_dim[1]
-            else:
-                height = self.style.height
-
-            return width, height
-
-        width, height = self.border_dim
-        width += self.style.margin_left + self.style.margin_right
-        height += self.style.margin_top + self.style.margin_bottom
-        return width, height
-
-    @property
-    def max_content_dim(self):
-        width, height = self.max_inner_dim
-        width -= self.style.padding_left + self.style.padding_right
-        height -= self.style.padding_top + self.style.padding_bottom
-        return width, height
-
-    @property
-    def max_inner_dim(self):
-        width, height = self.max_border_dim
-        if self.style.border != Style.BORDER_NONE:
-            width -= 2
-            height -= 2
-        return width, height
-
-    @property
-    def max_border_dim(self):
-        width, height = self.max_outer_dim
-        width -= self.style.margin_left + self.style.margin_right
-        height -= self.style.margin_top + self.style.margin_bottom
-        return width, height
-
-    @property
-    def max_outer_dim(self):
-        if self._parent is None:
-            term_size = os.get_terminal_size()
-            return term_size.columns, term_size.lines
-        return self._parent.max_content_dim  # TODO: account for siblings? add weighting?
-
-    @property
-    def min_outer_dim(self):
-        width, height = self.border_dim
-        width += self.style.margin_left + self.style.margin_right
-        height += self.style.margin_top + self.style.margin_bottom
-        return width, height
-
-    @property
-    def min_border_dim(self):
-        width, height = self.min_inner_dim
-        width += self.style.margin_left + self.style.margin_right
-        height += self.style.margin_top + self.style.margin_bottom
-        return width, height
-
-    @property
-    def min_inner_dim(self):
-        width, height = self.min_content_dim
-        if self.style.border != Style.BORDER_NONE:
-            width += 2
-            height += 2
-        return width, height
-
-    @property
-    def min_content_dim(self):
-        return self.content_width, self.content_height
+        self._min_content_height = max(len(self._lines), children_height)
+        return self._min_content_height
 
     def render_border(self, renderer: Renderer):
         border = self.style.border
