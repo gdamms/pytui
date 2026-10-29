@@ -1,5 +1,7 @@
 # pytui
 
+![Screenshot](assets/screenshot.png)
+
 Build terminal user interfaces in Python with ideas borrowed from HTML/CSS:
 a tree of widgets, typed styles, and a flexbox layout engine.
 
