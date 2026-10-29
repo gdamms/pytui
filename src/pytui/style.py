@@ -1,315 +1,349 @@
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from .element import Element
+"""Styles: a typed, CSS-inspired description of how a widget looks and is laid out.
+
+Every field defaults to ``None`` which means "not set". Styles are combined
+with ``|``, the right-hand side winning for every field it sets::
+
+    base = Style(padding=1, border="rounded")
+    danger = base | Style(fg="red", bold=True)
+
+State variants (``hover``, ``focus``, ``focus_within``, ``disabled``) are
+nested styles merged on top of the widget style while the state is active.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, fields, replace
+from typing import Any, Literal
+
+from .geometry import Edges
+
+Color = str | int | None
+"""A color: a name (``"red"``, ``"bright_blue"``, ``"default"``), ``"#rrggbb"`` or 0-255."""
+
+Size = int | str | None
+"""A length: cells (``10``), a percentage of the parent (``"50%"``) or ``"auto"``."""
+
+Spacing = int | tuple[int, int] | tuple[int, int, int, int] | Edges | None
+"""Box edges: ``1``, ``(vertical, horizontal)`` or ``(top, right, bottom, left)``."""
+
+BORDERS: dict[str, str] = {
+    "single": "┌─┐│└─┘│",
+    "double": "╔═╗║╚═╝║",
+    "rounded": "╭─╮│╰─╯│",
+    "heavy": "┏━┓┃┗━┛┃",
+    "ascii": "+-+|+-+|",
+    "blank": "        ",
+}
+"""Border presets. Custom borders are 8-character strings in the order:
+top-left, top, top-right, right, bottom-left, bottom, bottom-right, left."""
+
+_COLOR_NAMES = {
+    "black": 0,
+    "red": 1,
+    "green": 2,
+    "yellow": 3,
+    "blue": 4,
+    "magenta": 5,
+    "cyan": 6,
+    "white": 7,
+}
+_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+_PERCENT = re.compile(r"^\d+(\.\d+)?%$")
 
 
-BorderType = list[str]
-VisibleType = int
-WrapType = int
-PositionType = int
-DirectionType = int
-JustifyType = int
-AlignType = int
-SizingType = int
+def color_code(color: Color, background: bool = False) -> str:
+    """SGR parameter string for a color."""
+    if color is None or color == "default":
+        return "49" if background else "39"
+    if isinstance(color, int) and not isinstance(color, bool):
+        if not 0 <= color <= 255:
+            raise ValueError(f"256-color index must be in 0-255, got {color}")
+        return f"{48 if background else 38};5;{color}"
+    if isinstance(color, str):
+        if _HEX.match(color):
+            r, g, b = (int(color[i : i + 2], 16) for i in (1, 3, 5))
+            return f"{48 if background else 38};2;{r};{g};{b}"
+        name = color.lower().replace("-", "_")
+        if name in ("gray", "grey"):
+            name = "bright_black"
+        bright = name.startswith("bright_")
+        base = _COLOR_NAMES.get(name[7:] if bright else name)
+        if base is not None:
+            offset = (100 if background else 90) if bright else (40 if background else 30)
+            return str(offset + base)
+    raise ValueError(f"invalid color: {color!r}")
 
 
+def border_chars(border: str) -> str | None:
+    """The 8 border characters for a border name or custom string, ``None`` for no border."""
+    if border == "none":
+        return None
+    if border in BORDERS:
+        return BORDERS[border]
+    if len(border) == 8:
+        return border
+    raise ValueError(f"invalid border: {border!r} (use a preset name or 8 characters)")
+
+
+@dataclass(frozen=True, kw_only=True)
 class Style:
+    # --- sizing -----------------------------------------------------------
+    width: Size = None
+    height: Size = None
+    min_width: Size = None
+    min_height: Size = None
+    max_width: Size = None
+    max_height: Size = None
+    box_sizing: Literal["border-box", "content-box"] | None = None
+    """Whether ``width``/``height`` include padding and border (default ``border-box``)."""
 
-    BORDER_NONE: BorderType = []
-    BORDER_INVISIBLE: BorderType = [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ']
-    BORDER_SINGLE: BorderType = ['┌', '─', '┐', '│', '┘', '─', '└', '│']
-    BORDER_DOUBLE: BorderType = ['╔', '═', '╗', '║', '╝', '═', '╚', '║']
-    BORDER_ROUNDED: BorderType = ['╭', '─', '╮', '│', '╯', '─', '╰', '│']
-    BORDER_HEAVY: BorderType = ['┏', '━', '┓', '┃', '┛', '━', '┗', '┃']
+    # --- box model --------------------------------------------------------
+    margin: Spacing = None
+    padding: Spacing = None
+    border: str | None = None
+    """``"none"``, a name from ``BORDERS`` or a custom 8-character string."""
+    border_fg: Color = None
 
-    VISIBILITY_VISIBLE: VisibleType = 0
-    VISIBILITY_HIDDEN: VisibleType = 1
-    VISIBILITY_NONE: VisibleType = 2
+    # --- flex container ---------------------------------------------------
+    direction: Literal["row", "column"] | None = None
+    gap: int | None = None
+    justify_content: (
+        Literal["start", "center", "end", "space-between", "space-around", "space-evenly"] | None
+    ) = None
+    align_items: Literal["start", "center", "end", "stretch"] | None = None
 
-    WRAP_CONTENT: WrapType = -1
-    FILL_PARENT: WrapType = -2
+    # --- flex item --------------------------------------------------------
+    flex_grow: float | None = None
+    flex_shrink: float | None = None
+    align_self: Literal["auto", "start", "center", "end", "stretch"] | None = None
 
-    POSITION_RELATIVE: PositionType = 0
-    POSITION_ABSOLUTE: PositionType = 1
+    # --- positioning ------------------------------------------------------
+    position: Literal["relative", "absolute"] | None = None
+    top: int | None = None
+    right: int | None = None
+    bottom: int | None = None
+    left: int | None = None
 
-    DIRECTION_VERTICAL: DirectionType = 0
-    DIRECTION_HORIZONTAL: DirectionType = 1
+    # --- display ----------------------------------------------------------
+    display: Literal["flex", "none"] | None = None
+    visibility: Literal["visible", "hidden"] | None = None
+    overflow: Literal["hidden", "visible", "scroll"] | None = None
 
-    JUSTIFY_START: JustifyType = 0
+    # --- text (inherited by children) -------------------------------------
+    fg: Color = None
+    bg: Color = None
+    bold: bool | None = None
+    dim: bool | None = None
+    italic: bool | None = None
+    underline: bool | None = None
+    strike: bool | None = None
+    reverse: bool | None = None
+    text_align: Literal["left", "center", "right"] | None = None
+    text_wrap: bool | None = None
 
-    ALIGN_START: AlignType = 0
-    ALIGN_CENTER: AlignType = 1
+    # --- state variants ---------------------------------------------------
+    hover: Style | None = None
+    focus: Style | None = None
+    focus_within: Style | None = None
+    disabled: Style | None = None
 
-    SIZING_CONTENT: SizingType = 0
-    SIZING_INNER: SizingType = 1
-    SIZING_BORDER: SizingType = 2
-    SIZING_OUTER: SizingType = 3
+    def __post_init__(self) -> None:
+        for name, choices in _CHOICES.items():
+            value = getattr(self, name)
+            if value is not None and value not in choices:
+                raise ValueError(f"invalid {name}: {value!r} (expected one of {choices})")
+        for name in _SIZE_FIELDS:
+            value = getattr(self, name)
+            if value is None or value == "auto":
+                continue
+            valid_int = isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            if not valid_int and not (isinstance(value, str) and _PERCENT.match(value)):
+                raise ValueError(f"invalid {name}: {value!r} (expected int >= 0, 'N%' or 'auto')")
+        for name in ("fg", "bg", "border_fg"):
+            color_code(getattr(self, name))
+        if self.border is not None:
+            border_chars(self.border)
+        for name in ("margin", "padding"):
+            value = getattr(self, name)
+            if value is not None:
+                object.__setattr__(self, name, Edges.parse(value))
+        for name in _STATE_FIELDS:
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, Style):
+                raise TypeError(f"{name} must be a Style, got {type(value).__name__}")
 
-    def __init__(self, element: Element, **kwargs):
-        self._element = element
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+    def __or__(self, other: Style | None) -> Style:
+        if other is None:
+            return self
+        if not isinstance(other, Style):
+            return NotImplemented
+        mine, theirs = self.__dict__, other.__dict__
+        values = {n: mine[n] if theirs[n] is None else theirs[n] for n in _FIELD_NAMES}
+        for name in _STATE_FIELDS:
+            if mine[name] is not None and theirs[name] is not None:
+                values[name] = mine[name] | theirs[name]
+        return _build(values)
 
-    @property
-    def element(self) -> Element:
-        return self._element
+    def set_fields(self) -> dict[str, Any]:
+        """The fields explicitly set on this style."""
+        return {n: v for n in _FIELD_NAMES if (v := getattr(self, n)) is not None}
 
-    @property
-    def border(self) -> BorderType:
-        if not hasattr(self, '_border'):
-            return Style.BORDER_SINGLE
-        return self._border
+    def resolve(self, parent: ComputedStyle | None) -> ComputedStyle:
+        """Fill unset fields from ``parent`` (inherited fields) or the defaults."""
+        mine, defaults = self.__dict__, DEFAULTS.__dict__
+        inherited = defaults if parent is None else parent.__dict__
+        values = {}
+        for name in _COMPUTED_NAMES:
+            value = mine[name]
+            if value is None:
+                value = inherited[name] if name in _INHERITED else defaults[name]
+            values[name] = value
+        return _build_computed(values)
 
-    @border.setter
-    def border(self, value: BorderType):
-        self._border = value
 
-    @property
-    def visibility(self) -> VisibleType:
-        if not hasattr(self, '_visibility'):
-            return Style.VISIBILITY_VISIBLE
-        return self._visibility
+@dataclass(frozen=True, kw_only=True)
+class ComputedStyle:
+    """A fully resolved :class:`Style`: nothing left to inherit or default.
 
-    @visibility.setter
-    def visibility(self, value: VisibleType):
-        self._visibility = value
+    Produced by :meth:`Style.resolve`. Fields that are ``None`` here are
+    genuinely absent (``auto`` sizes, unset offsets, default colors).
+    """
 
-    @property
-    def inverted(self) -> bool:
-        if not hasattr(self, '_inverted'):
-            return False
-        return self._inverted
+    width: Size
+    height: Size
+    min_width: Size
+    min_height: Size
+    max_width: Size
+    max_height: Size
+    box_sizing: Literal["border-box", "content-box"]
 
-    @inverted.setter
-    def inverted(self, value: bool):
-        self._inverted = value
+    margin: Edges
+    padding: Edges
+    border: str
+    border_fg: Color
 
-    @property
-    def content_fg_color(self) -> str:
-        if not hasattr(self, '_content_fg_color'):
-            return 'white'
-        return self._content_fg_color
+    direction: Literal["row", "column"]
+    gap: int
+    justify_content: Literal[
+        "start", "center", "end", "space-between", "space-around", "space-evenly"
+    ]
+    align_items: Literal["start", "center", "end", "stretch"]
 
-    @content_fg_color.setter
-    def content_fg_color(self, value: str):
-        self._content_fg_color = value
+    flex_grow: float
+    flex_shrink: float
+    align_self: Literal["auto", "start", "center", "end", "stretch"]
 
-    @property
-    def content_bg_color(self) -> str:
-        if not hasattr(self, '_content_bg_color'):
-            return 'black'
-        return self._content_bg_color
+    position: Literal["relative", "absolute"]
+    top: int | None
+    right: int | None
+    bottom: int | None
+    left: int | None
 
-    @content_bg_color.setter
-    def content_bg_color(self, value: str):
-        self._content_bg_color = value
+    display: Literal["flex", "none"]
+    visibility: Literal["visible", "hidden"]
+    overflow: Literal["hidden", "visible", "scroll"]
 
-    @property
-    def border_fg_color(self) -> str:
-        if not hasattr(self, '_border_fg_color'):
-            return 'white'
-        return self._border_fg_color
+    fg: Color
+    bg: Color
+    bold: bool
+    dim: bool
+    italic: bool
+    underline: bool
+    strike: bool
+    reverse: bool
+    text_align: Literal["left", "center", "right"]
+    text_wrap: bool
 
-    @border_fg_color.setter
-    def border_fg_color(self, value: str):
-        self._border_fg_color = value
+    def __or__(self, other: Style | None) -> ComputedStyle:
+        """Override with the fields ``other`` sets (state variants are ignored)."""
+        if other is None:
+            return self
+        if not isinstance(other, Style):
+            return NotImplemented
+        changes = {n: v for n, v in other.set_fields().items() if n in _COMPUTED_SET}
+        return replace(self, **changes)
 
-    @property
-    def border_bg_color(self) -> str:
-        if not hasattr(self, '_border_bg_color'):
-            return 'black'
-        return self._border_bg_color
 
-    @border_bg_color.setter
-    def border_bg_color(self, value: str):
-        self._border_bg_color = value
+def _build(values: dict[str, object]) -> Style:
+    """Create a Style without re-running validation (values are already valid)."""
+    style = object.__new__(Style)
+    style.__dict__.update(values)
+    return style
 
-    @property
-    def width(self) -> WrapType:
-        if not hasattr(self, '_width'):
-            return Style.WRAP_CONTENT
-        return self._width
 
-    @width.setter
-    def width(self, value: WrapType):
-        self._width = value
+def _build_computed(values: dict[str, object]) -> ComputedStyle:
+    style = object.__new__(ComputedStyle)
+    style.__dict__.update(values)
+    return style
 
-    @property
-    def height(self) -> WrapType:
-        if not hasattr(self, '_height'):
-            return Style.WRAP_CONTENT
-        return self._height
 
-    @height.setter
-    def height(self, value: WrapType):
-        self._height = value
+_FIELD_NAMES = tuple(f.name for f in fields(Style))
+_STATE_FIELDS = frozenset({"hover", "focus", "focus_within", "disabled"})
+_COMPUTED_NAMES = tuple(n for n in _FIELD_NAMES if n not in _STATE_FIELDS)
+_COMPUTED_SET = frozenset(_COMPUTED_NAMES)
+assert _COMPUTED_NAMES == tuple(f.name for f in fields(ComputedStyle)), (
+    "ComputedStyle fields must mirror Style fields (minus state variants), in order"
+)
+_SIZE_FIELDS = ("width", "height", "min_width", "min_height", "max_width", "max_height")
+_INHERITED = frozenset(
+    {
+        "fg",
+        "bg",
+        "bold",
+        "dim",
+        "italic",
+        "underline",
+        "strike",
+        "reverse",
+        "text_align",
+        "text_wrap",
+        "visibility",
+    }
+)
+_CHOICES: dict[str, tuple[str, ...]] = {
+    "box_sizing": ("border-box", "content-box"),
+    "direction": ("row", "column"),
+    "justify_content": (
+        "start",
+        "center",
+        "end",
+        "space-between",
+        "space-around",
+        "space-evenly",
+    ),
+    "align_items": ("start", "center", "end", "stretch"),
+    "align_self": ("auto", "start", "center", "end", "stretch"),
+    "position": ("relative", "absolute"),
+    "display": ("flex", "none"),
+    "visibility": ("visible", "hidden"),
+    "overflow": ("hidden", "visible", "scroll"),
+    "text_align": ("left", "center", "right"),
+}
 
-    @property
-    def padding_top(self) -> int:
-        if not hasattr(self, '_padding_top'):
-            return 0
-        return self._padding_top
-
-    @padding_top.setter
-    def padding_top(self, value: int):
-        self._padding_top = value
-
-    @property
-    def padding_bottom(self) -> int:
-        if not hasattr(self, '_padding_bottom'):
-            return 0
-        return self._padding_bottom
-
-    @padding_bottom.setter
-    def padding_bottom(self, value: int):
-        self._padding_bottom = value
-
-    @property
-    def padding_left(self) -> int:
-        if not hasattr(self, '_padding_left'):
-            return 0
-        return self._padding_left
-
-    @padding_left.setter
-    def padding_left(self, value: int):
-        self._padding_left = value
-
-    @property
-    def padding_right(self) -> int:
-        if not hasattr(self, '_padding_right'):
-            return 0
-        return self._padding_right
-
-    @padding_right.setter
-    def padding_right(self, value: int):
-        self._padding_right = value
-
-    @property
-    def margin_top(self) -> int:
-        if not hasattr(self, '_margin_top'):
-            return 0
-        return self._margin_top
-
-    @margin_top.setter
-    def margin_top(self, value: int):
-        self._margin_top = value
-
-    @property
-    def margin_bottom(self) -> int:
-        if not hasattr(self, '_margin_bottom'):
-            return 0
-        return self._margin_bottom
-
-    @margin_bottom.setter
-    def margin_bottom(self, value: int):
-        self._margin_bottom = value
-
-    @property
-    def margin_left(self) -> int:
-        if not hasattr(self, '_margin_left'):
-            return 0
-        return self._margin_left
-
-    @margin_left.setter
-    def margin_left(self, value: int):
-        self._margin_left = value
-
-    @property
-    def margin_right(self) -> int:
-        if not hasattr(self, '_margin_right'):
-            return 0
-        return self._margin_right
-
-    @margin_right.setter
-    def margin_right(self, value: int):
-        self._margin_right = value
-
-    @property
-    def position(self) -> PositionType:
-        if not hasattr(self, '_position'):
-            return Style.POSITION_RELATIVE
-        return self._position
-
-    @position.setter
-    def position(self, value: PositionType):
-        self._position = value
-
-    @property
-    def top(self) -> int:
-        if not hasattr(self, '_top'):
-            return 0
-        return self._top
-
-    @top.setter
-    def top(self, value: int):
-        self._top = value
-
-    @property
-    def bottom(self) -> None | int:
-        if not hasattr(self, '_bottom'):
-            return None
-        return self._bottom
-
-    @bottom.setter
-    def bottom(self, value: None | int):
-        self._bottom = value
-
-    @property
-    def left(self) -> int:
-        if not hasattr(self, '_left'):
-            return 0
-        return self._left
-
-    @left.setter
-    def left(self, value: int):
-        self._left = value
-
-    @property
-    def right(self) -> None | int:
-        if not hasattr(self, '_right'):
-            return None
-        return self._right
-
-    @right.setter
-    def right(self, value: None | int):
-        self._right = value
-
-    @property
-    def direction(self) -> DirectionType:
-        if not hasattr(self, '_direction'):
-            return Style.DIRECTION_VERTICAL
-        return self._direction
-
-    @direction.setter
-    def direction(self, value: DirectionType):
-        self._direction = value
-
-    @property
-    def justify_content(self) -> JustifyType:
-        if not hasattr(self, '_justify_content'):
-            return Style.JUSTIFY_START
-        return self._justify_content
-
-    @justify_content.setter
-    def justify_content(self, value: JustifyType):
-        self._justify_content = value
-
-    @property
-    def align_items(self) -> AlignType:
-        if not hasattr(self, '_align_items'):
-            return Style.ALIGN_START
-        return self._align_items
-
-    @align_items.setter
-    def align_items(self, value: AlignType):
-        self._align_items = value
-
-    @property
-    def sizing(self) -> SizingType:
-        if not hasattr(self, '_sizing'):
-            return Style.SIZING_BORDER
-        return self._sizing
-
-    @sizing.setter
-    def sizing(self, value: SizingType):
-        self._sizing = value
+DEFAULTS = Style(
+    box_sizing="border-box",
+    margin=0,
+    padding=0,
+    border="none",
+    direction="column",
+    gap=0,
+    justify_content="start",
+    align_items="stretch",
+    flex_grow=0,
+    flex_shrink=1,
+    align_self="auto",
+    position="relative",
+    display="flex",
+    visibility="visible",
+    overflow="hidden",
+    bold=False,
+    dim=False,
+    italic=False,
+    underline=False,
+    strike=False,
+    reverse=False,
+    text_align="left",
+    text_wrap=True,
+)
+"""Values used for fields that are neither set nor inherited."""

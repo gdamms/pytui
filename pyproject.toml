@@ -1,16 +1,35 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "PyTUI"
-version = "0.1.0"
-description = "A python package to make TUIs."
-authors = [{ name="gdamms", email="damguillotin@gmail.com" }]
-license = { text = "MIT" }
+name = "pytui"
+version = "0.2.0"
+description = "Build terminal user interfaces in Python with a flexbox-style layout engine."
 readme = "README.md"
-requires-python = ">=3.9"
+authors = [{ name = "gdamms", email = "damguillotin@gmail.com" }]
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
 dependencies = []
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console :: Curses",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: User Interfaces",
+    "Typing :: Typed",
+]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+ "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
