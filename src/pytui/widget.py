@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 from .canvas import Canvas, CellStyle
 from .events import KeyEvent, MouseEvent, PasteEvent, normalize_key
 from .geometry import Rect
-from .style import DEFAULTS, Style
+from .style import DEFAULTS, ComputedStyle, Style
 
 if TYPE_CHECKING:
     from .app import App
@@ -56,7 +56,7 @@ class Widget:
         self._bindings: dict[str, Callable[[], Any]] = {}
 
         # Set by the app on every frame.
-        self.computed: Style = DEFAULTS
+        self.computed: ComputedStyle = DEFAULTS.resolve(None)
         self.region = Rect()
         self.content_region = Rect()
         self.virtual_width = 0

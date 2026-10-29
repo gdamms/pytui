@@ -13,8 +13,8 @@ nested styles merged on top of the widget style while the state is active.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, fields
-from typing import Literal
+from dataclasses import dataclass, fields, replace
+from typing import Any, Literal
 
 from .geometry import Edges
 
@@ -185,23 +185,84 @@ class Style:
                 values[name] = mine[name] | theirs[name]
         return _build(values)
 
-    def set_fields(self) -> dict[str, object]:
+    def set_fields(self) -> dict[str, Any]:
         """The fields explicitly set on this style."""
         return {n: v for n in _FIELD_NAMES if (v := getattr(self, n)) is not None}
 
-    def resolve(self, parent: Style | None) -> Style:
+    def resolve(self, parent: ComputedStyle | None) -> ComputedStyle:
         """Fill unset fields from ``parent`` (inherited fields) or the defaults."""
         mine, defaults = self.__dict__, DEFAULTS.__dict__
         inherited = defaults if parent is None else parent.__dict__
         values = {}
-        for name in _FIELD_NAMES:
+        for name in _COMPUTED_NAMES:
             value = mine[name]
             if value is None:
                 value = inherited[name] if name in _INHERITED else defaults[name]
             values[name] = value
-        for name in _STATE_FIELDS:
-            values[name] = None
-        return _build(values)
+        return _build_computed(values)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ComputedStyle:
+    """A fully resolved :class:`Style`: nothing left to inherit or default.
+
+    Produced by :meth:`Style.resolve`. Fields that are ``None`` here are
+    genuinely absent (``auto`` sizes, unset offsets, default colors).
+    """
+
+    width: Size
+    height: Size
+    min_width: Size
+    min_height: Size
+    max_width: Size
+    max_height: Size
+    box_sizing: Literal["border-box", "content-box"]
+
+    margin: Edges
+    padding: Edges
+    border: str
+    border_fg: Color
+
+    direction: Literal["row", "column"]
+    gap: int
+    justify_content: Literal[
+        "start", "center", "end", "space-between", "space-around", "space-evenly"
+    ]
+    align_items: Literal["start", "center", "end", "stretch"]
+
+    flex_grow: float
+    flex_shrink: float
+    align_self: Literal["auto", "start", "center", "end", "stretch"]
+
+    position: Literal["relative", "absolute"]
+    top: int | None
+    right: int | None
+    bottom: int | None
+    left: int | None
+
+    display: Literal["flex", "none"]
+    visibility: Literal["visible", "hidden"]
+    overflow: Literal["hidden", "visible", "scroll"]
+
+    fg: Color
+    bg: Color
+    bold: bool
+    dim: bool
+    italic: bool
+    underline: bool
+    strike: bool
+    reverse: bool
+    text_align: Literal["left", "center", "right"]
+    text_wrap: bool
+
+    def __or__(self, other: Style | None) -> ComputedStyle:
+        """Override with the fields ``other`` sets (state variants are ignored)."""
+        if other is None:
+            return self
+        if not isinstance(other, Style):
+            return NotImplemented
+        changes = {n: v for n, v in other.set_fields().items() if n in _COMPUTED_SET}
+        return replace(self, **changes)
 
 
 def _build(values: dict[str, object]) -> Style:
@@ -211,8 +272,19 @@ def _build(values: dict[str, object]) -> Style:
     return style
 
 
+def _build_computed(values: dict[str, object]) -> ComputedStyle:
+    style = object.__new__(ComputedStyle)
+    style.__dict__.update(values)
+    return style
+
+
 _FIELD_NAMES = tuple(f.name for f in fields(Style))
 _STATE_FIELDS = frozenset({"hover", "focus", "focus_within", "disabled"})
+_COMPUTED_NAMES = tuple(n for n in _FIELD_NAMES if n not in _STATE_FIELDS)
+_COMPUTED_SET = frozenset(_COMPUTED_NAMES)
+assert _COMPUTED_NAMES == tuple(f.name for f in fields(ComputedStyle)), (
+    "ComputedStyle fields must mirror Style fields (minus state variants), in order"
+)
 _SIZE_FIELDS = ("width", "height", "min_width", "min_height", "max_width", "max_height")
 _INHERITED = frozenset(
     {

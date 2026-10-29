@@ -8,7 +8,7 @@ from functools import lru_cache
 from typing import NamedTuple
 
 from .geometry import Rect
-from .style import Color, Style, color_code
+from .style import Color, ComputedStyle, color_code
 from .text import char_width, text_width, truncate
 
 
@@ -25,7 +25,7 @@ class CellStyle(NamedTuple):
     reverse: bool = False
 
     @classmethod
-    def from_style(cls, style: Style) -> CellStyle:
+    def from_style(cls, style: ComputedStyle) -> CellStyle:
         return cls(
             style.fg,
             style.bg,

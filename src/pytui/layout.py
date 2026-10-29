@@ -12,7 +12,7 @@ import math
 from typing import TYPE_CHECKING
 
 from .geometry import Edges, Rect
-from .style import Size, Style
+from .style import ComputedStyle, Size
 
 if TYPE_CHECKING:
     from .widget import Widget
@@ -31,7 +31,7 @@ def resolve_length(value: Size, reference: int | None) -> int | None:
     return value
 
 
-def insets(style: Style) -> Edges:
+def insets(style: ComputedStyle) -> Edges:
     """Space between a widget's border box and its content box."""
     border = 0 if style.border == "none" else 1
     gutter = 1 if style.overflow == "scroll" and not border else 0
