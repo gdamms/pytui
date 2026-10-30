@@ -11,17 +11,7 @@ import termios
 from types import TracebackType
 from typing import TextIO
 
-ENTER = (
-    "\x1b[?1049h"  # alternate screen
-    "\x1b[?25l"  # hide cursor
-    "\x1b[?2004h"  # bracketed paste
-    "\x1b[H\x1b[2J"
-)
-LEAVE = "\x1b[0m\x1b[?2004l\x1b[?25h\x1b[?1049l"
-MOUSE_ON = "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h"
-MOUSE_OFF = "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l"
-SYNC_START = "\x1b[?2026h"
-SYNC_END = "\x1b[?2026l"
+from .ansi import ENTER, LEAVE, MOUSE_OFF, MOUSE_ON
 
 
 class Terminal:

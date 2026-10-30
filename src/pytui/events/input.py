@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .events import Event, KeyEvent, MouseEvent, PasteEvent
+from .event import Event, KeyEvent, MouseEvent, PasteEvent
 
 _PASTE_START = "\x1b[200~"
 _PASTE_END = "\x1b[201~"
