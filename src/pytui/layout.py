@@ -15,7 +15,7 @@ from .geometry import Edges, Rect
 from .style import ComputedStyle, Size
 
 if TYPE_CHECKING:
-    from .widget import Widget
+    from .widgets import Widget
 
 _EMPTY = Rect()
 
@@ -299,11 +299,14 @@ class LayoutEngine:
             (a + size + b for (a, b), size in zip(cross_margins, crosses, strict=True)), default=0
         )
         virtual_w, virtual_h = (used, cross_extent) if row else (cross_extent, used)
-        if s.overflow == "scroll":
-            virtual_h = max(virtual_h, widget.content_height(content.width))
+        if s.overflow != "visible":
+            text_w, text_h = widget.text_size(content.width)
+            virtual_w = max(virtual_w, text_w)
+            virtual_h = max(virtual_h, text_h, widget.content_height(content.width))
             widget.virtual_width, widget.virtual_height = virtual_w, virtual_h
             widget.scroll_x = max(0, min(widget.scroll_x, virtual_w - content.width))
             widget.scroll_y = max(0, min(widget.scroll_y, virtual_h - content.height))
+            widget.reveal_cursor()
         else:
             widget.virtual_width, widget.virtual_height = content.width, content.height
             widget.scroll_x = widget.scroll_y = 0

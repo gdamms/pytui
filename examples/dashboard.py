@@ -15,7 +15,13 @@ def main() -> None:
     cpu = ProgressBar(flex_grow=1)
     memory = ProgressBar(flex_grow=1, fg="yellow")
     paused = Checkbox("Pause log")
-    log = Box(overflow="scroll", flex_grow=1, border="single", title="log", focusable=True)
+    log = Box(
+        Text(" log ", position="absolute", top=-1, left=1),
+        overflow="scroll",
+        flex_grow=1,
+        border="single",
+        focusable=True,
+    )
 
     root = Box(
         Row(Text("dashboard", bold=True), clock, padding=(0, 1), bg="blue", fg="bright_white"),
@@ -33,16 +39,16 @@ def main() -> None:
 
     def tick() -> None:
         clock.text = time.strftime("%H:%M:%S")
-        cpu.value = random.random()
-        memory.value = (memory.value + 0.02) % 1
+        cpu.value.progress = random.random()
+        memory.value.progress = (memory.value.progress + 0.02) % 1
 
     def add_line(line: str) -> None:
-        if paused.checked:
+        if paused.value.checked:
             return
         follow = log.scroll_y >= log.max_scroll_y
         log.mount(Text(line))
         if len(log.children) > 500:
-            log.children[0].remove()
+            log.children[1].remove()  # children[0] is the title
         if follow:
             log.scroll_y = log.virtual_height + 1  # clamped to the bottom on next layout
 

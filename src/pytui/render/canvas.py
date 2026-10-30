@@ -1,15 +1,17 @@
-"""A grid of styled cells that widgets draw into, and its conversion to ANSI output."""
+"""A grid of styled cells that widgets draw into, and its display on a screen."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from functools import lru_cache
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
-from .geometry import Rect
-from .style import Color, ComputedStyle, color_code
-from .text import char_width, text_width, truncate
+from ..geometry import Rect
+from ..style import Color, ComputedStyle
+from ..text import char_width, text_width
+
+if TYPE_CHECKING:
+    from ..screen import Screen
 
 
 class CellStyle(NamedTuple):
@@ -38,27 +40,6 @@ class CellStyle(NamedTuple):
         )
 
 
-@lru_cache(maxsize=1024)
-def sgr(style: CellStyle) -> str:
-    """The escape sequence that switches the terminal to ``style``."""
-    codes = ["0"]
-    for flag, code in (
-        (style.bold, "1"),
-        (style.dim, "2"),
-        (style.italic, "3"),
-        (style.underline, "4"),
-        (style.reverse, "7"),
-        (style.strike, "9"),
-    ):
-        if flag:
-            codes.append(code)
-    if style.fg is not None:
-        codes.append(color_code(style.fg))
-    if style.bg is not None:
-        codes.append(color_code(style.bg, background=True))
-    return f"\x1b[{';'.join(codes)}m"
-
-
 _BLANK = CellStyle()
 
 
@@ -67,11 +48,27 @@ class Canvas:
 
     A wide character occupies two cells: the character itself followed by an
     empty-string placeholder.
+
+    The canvas holds what should be displayed; its ``screen`` decides how to show it.
     """
 
-    def __init__(self, width: int, height: int) -> None:
-        self.width = max(0, width)
-        self.height = max(0, height)
+    def __init__(self, width: int, height: int, screen: Screen | None = None) -> None:
+        self.width = self.height = 0
+        self.chars: list[list[str]] = []
+        self.styles: list[list[CellStyle]] = []
+        self.screen = screen
+        self.resize(width, height)
+
+    def resize(self, width: int, height: int) -> None:
+        """Change the size, blanking the canvas if it differs."""
+        width, height = max(0, width), max(0, height)
+        if (width, height) == (self.width, self.height):
+            return
+        self.width, self.height = width, height
+        self.clear()
+
+    def clear(self) -> None:
+        """Blank every cell and reset the clip, ready to draw a new frame."""
         self.chars = [[" "] * self.width for _ in range(self.height)]
         self.styles = [[_BLANK] * self.width for _ in range(self.height)]
         self._clip = Rect(0, 0, self.width, self.height)
@@ -134,8 +131,8 @@ class Canvas:
             x += w
         return x - start
 
-    def border(self, rect: Rect, chars: str, style: CellStyle, title: str | None = None) -> None:
-        """Draw a box border along the edges of ``rect``, with an optional title on top."""
+    def border(self, rect: Rect, chars: str, style: CellStyle) -> None:
+        """Draw a box border along the edges of ``rect``."""
         if rect.width < 2 or rect.height < 2:
             return
         tl, t, tr, r, bl, b, br, left = chars
@@ -146,40 +143,13 @@ class Canvas:
         for row in range(y + 1, bottom):
             self.set(x, row, left, style)
             self.set(right, row, r, style)
-        if title and rect.width >= 5:
-            self.text(x + 2, y, truncate(f" {title} ", rect.width - 4), style)
 
     def lines(self) -> list[str]:
         """The canvas content as plain text lines."""
         return ["".join(row) for row in self.chars]
 
-    def render(self, previous: Canvas | None = None) -> str:
-        """ANSI output that turns ``previous`` (or a blank screen) into this canvas."""
-        if previous is not None and (previous.width, previous.height) != (self.width, self.height):
-            previous = None
-        out: list[str] = []
-        current_style: CellStyle | None = None
-        cursor: tuple[int, int] | None = None
-        for y in range(self.height):
-            chars, styles = self.chars[y], self.styles[y]
-            old_chars = previous.chars[y] if previous else None
-            old_styles = previous.styles[y] if previous else None
-            x = 0
-            while x < self.width:
-                char, style = chars[x], styles[x]
-                if char == "" or (
-                    old_chars is not None and old_chars[x] == char and old_styles[x] == style
-                ):
-                    x += 1
-                    continue
-                if cursor != (x, y):
-                    out.append(f"\x1b[{y + 1};{x + 1}H")
-                if style != current_style:
-                    out.append(sgr(style))
-                    current_style = style
-                out.append(char)
-                x += 2 if x + 1 < self.width and chars[x + 1] == "" else 1
-                cursor = (x, y) if x < self.width else None
-        if out:
-            out.append("\x1b[0m")
-        return "".join(out)
+    def present(self) -> None:
+        """Show the canvas on its screen."""
+        if self.screen is None:
+            raise RuntimeError("the canvas has no screen to present to")
+        self.screen.display(self)

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ..geometry import Edges, Rect
+from ..style import border_chars
 from .canvas import Canvas, CellStyle
-from .geometry import Edges, Rect
-from .style import border_chars
 
 if TYPE_CHECKING:
-    from .widget import Widget
+    from ..widgets import Widget
 
 
 def _padding_box(widget: Widget) -> Rect:
@@ -22,6 +22,15 @@ def _paint_order(widget: Widget) -> list[Widget]:
     return [c for c in children if c.computed.position != "absolute"] + [
         c for c in children if c.computed.position == "absolute"
     ]
+
+
+def _child_clip(widget: Widget, child: Widget, clip: Rect) -> Rect:
+    """Where ``child`` may draw: absolute children may also cover the parent's border."""
+    if widget.computed.overflow == "visible":
+        return clip
+    if child.computed.position == "absolute":
+        return clip.intersect(widget.region)
+    return clip.intersect(_padding_box(widget))
 
 
 def paint(widget: Widget, canvas: Canvas) -> None:
@@ -38,17 +47,20 @@ def paint(widget: Widget, canvas: Canvas) -> None:
         chars = border_chars(s.border)
         if chars is not None:
             border_style = CellStyle(fg=s.border_fg or s.fg, bg=s.bg, dim=bool(s.dim))
-            canvas.border(widget.region, chars, border_style, widget.border_title)
+            canvas.border(widget.region, chars, border_style)
         with canvas.clip(widget.content_region):
             widget.render(canvas)
 
-    clip = canvas.clip_rect if s.overflow == "visible" else _padding_box(widget)
-    with canvas.clip(clip):
-        for child in _paint_order(widget):
+    clip = canvas.clip_rect
+    for child in _paint_order(widget):
+        with canvas.clip(_child_clip(widget, child, clip)):
             paint(child, canvas)
 
-    if visible and s.overflow == "scroll":
-        _paint_scrollbar(widget, canvas)
+    if visible:
+        with canvas.clip(widget.content_region):
+            widget.render_cursor(canvas)
+        if s.overflow == "scroll":
+            _paint_scrollbar(widget, canvas)
 
 
 def _paint_scrollbar(widget: Widget, canvas: Canvas) -> None:
@@ -79,11 +91,8 @@ def widget_at(widget: Widget, x: int, y: int, clip: Rect | None = None) -> Widge
         return None
     if clip is not None and not clip.contains(x, y):
         return None
-    child_clip = (
-        clip if s.overflow == "visible" else _padding_box(widget).intersect(clip or widget.region)
-    )
     for child in reversed(_paint_order(widget)):
-        found = widget_at(child, x, y, child_clip)
+        found = widget_at(child, x, y, _child_clip(widget, child, clip or widget.region))
         if found is not None:
             return found
     if s.visibility == "visible" and widget.region.contains(x, y):

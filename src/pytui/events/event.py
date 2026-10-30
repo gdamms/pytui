@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from ..widgets import Widget
 
 MouseAction = Literal[
     "down", "up", "move", "drag", "scroll_up", "scroll_down", "scroll_left", "scroll_right"
@@ -65,20 +68,26 @@ class ResizeEvent:
     height: int
 
 
+@dataclass(frozen=True)
+class ClickEvent:
+    """A click on ``widget`` (the deepest widget clicked, the event bubbles up).
+
+    ``mouse`` is the mouse release that completed the click, or ``None`` when the
+    click came from the keyboard (Enter or Space on a button) or from code.
+    """
+
+    widget: Widget
+    mouse: MouseEvent | None = None
+
+
+@dataclass(frozen=True)
+class ChangeEvent:
+    """Field ``name`` of ``widget.value`` changed from ``old`` to ``value``."""
+
+    widget: Widget
+    name: str
+    value: Any
+    old: Any
+
+
 Event = KeyEvent | MouseEvent | PasteEvent | ResizeEvent
-
-
-def normalize_key(key: str) -> str:
-    """Normalize a binding like ``"Ctrl+Shift+Up"`` to ``"ctrl+shift+up"``."""
-    parts = key.split("+")
-    if key.endswith("+") and len(key) > 1:  # the "+" key itself, e.g. "ctrl++"
-        parts = parts[:-2] + ["+"]
-    *modifiers, name = parts
-    mods = {m.strip().lower() for m in modifiers}
-    unknown = mods - {"ctrl", "alt", "shift"}
-    if unknown:
-        raise ValueError(f"unknown modifier(s) in {key!r}: {', '.join(sorted(unknown))}")
-    if len(name) > 1:
-        name = name.lower()
-    prefix = "ctrl+" * ("ctrl" in mods) + "alt+" * ("alt" in mods) + "shift+" * ("shift" in mods)
-    return prefix + name

@@ -10,8 +10,9 @@ a tree of widgets, typed styles, and a flexbox layout engine.
   scrollable containers.
 - **Styles as objects**: `Style(...)` merged with `|`, inherited text attributes, and
   `hover` / `focus` / `focus_within` / `disabled` state variants.
-- **Widgets**: `Box`, `Row`, `Column`, `Text`, `Button`, `Checkbox`, `Input`, `TextArea`,
-  `ListView`, `ProgressBar`, and an easy way to write your own.
+- **One building block**: everything is a `Widget` (a styled box that shows text, holds state,
+  contains children and reacts to input). `Row`, `Column`, `Text`, `Button`, `Checkbox`,
+  `TextArea` and `ProgressBar` are small helpers built from it.
 - **Input**: keyboard with modifiers, mouse (click, drag, hover, wheel), bracketed paste,
   focus navigation with Tab.
 - **Efficient rendering**: an in-memory cell buffer diffed against the previous frame, so only
@@ -36,7 +37,7 @@ from pytui import App, Box, Button, Row, Text
 count = Text("Clicked 0 times")
 clicks = 0
 
-def on_click():
+def on_click(event):
     global clicks
     clicks += 1
     count.text = f"Clicked {clicks} times"
@@ -45,8 +46,8 @@ app = App(
     Box(
         Text("Hello from pytui!", bold=True, fg="cyan"),
         count,
-        Row(Button("Click me", on_press=on_click), Button("Quit", on_press=lambda: app.exit()), gap=2),
-        border="rounded", title="hello", padding=(1, 2), gap=1,
+        Row(Button("Click me", on_click=on_click), Button("Quit", on_click=lambda e: app.exit()), gap=2),
+        border="rounded", padding=(1, 2), gap=1,
         align_items="center", justify_content="center",
     )
 )
@@ -89,10 +90,17 @@ main axis (`direction`, default `"column"`) and aligned on the cross axis.
 
 ```python
 Row(
-    Box(sidebar, width=30, flex_shrink=0, border="rounded", title="Files"),
+    Box(sidebar, width=30, flex_shrink=0, border="rounded"),
     Box(editor, flex_grow=1, border="rounded"),               # takes the remaining space
     Box(help_panel, width="25%", display="none", id="help"),  # toggled later
 )
+```
+
+Absolute children are positioned in the parent's padding box but may draw over its border,
+which is how you give a box a title:
+
+```python
+Box(Text(" Files ", position="absolute", top=-1, left=1), sidebar, border="rounded")
 ```
 
 `overflow="scroll"` makes a container scrollable. Its children keep their natural size, and it
@@ -141,29 +149,71 @@ class DangerButton(Button):
 
 ## Widgets
 
-| Widget | Purpose | Callbacks |
+Everything on screen is a `Widget`:
+
+```python
+Widget(*children, text="", on_click=None, on_key=None, on_change=None, **style)
+```
+
+- **`text` is a background**: it is painted inside the box (wrapped unless `text_wrap=False`,
+  aligned with `text_align`) and the children are laid out on their own, over it. The two only
+  interact through size: the widget is as big as whichever needs more room. Empty text takes no
+  space.
+- **Strings among the children become `Text` widgets**: `Column("a", "b")` shows two lines.
+- **`value` is the state** of the widget (`checkbox.value.checked`, `textarea.value.text`,
+  `bar.value.progress`). Assigning a field, from your code or from input, calls `on_change`.
+- **`cursor`** (`None` by default) is a caret or selection in `text`, drawn while focused.
+
+The helpers are presets and compositions of `Widget`:
+
+| Helper | What it is | State |
 | --- | --- | --- |
-| `Box(*children, title=None)` | Generic container (`Row` / `Column` preset the direction) | |
-| `Text(text)` | Text, word-wrapped unless `text_wrap=False` | |
-| `Button(label)` | Pressed with click, Enter or Space | `on_press()` |
-| `Checkbox(label, checked)` | Toggle | `on_change(checked)` |
-| `Input(value, placeholder=, password=)` | Single-line text field | `on_change(value)`, `on_submit(value)` |
-| `TextArea(value)` | Multi-line editor | `on_change(value)` |
-| `ListView(items)` | Scrollable list with a highlighted row | `on_select(i, item)`, `on_highlight(i, item)` |
-| `ProgressBar(value)` | `value` between 0 and 1 | |
+| `Box` | `Widget` itself | |
+| `Row(*children)`, `Column(*children)` | `direction` preset | |
+| `Text(text)` | `Widget(text=text)` | |
+| `Button(*children)` | Focusable, Enter and Space count as a click | |
+| `Checkbox(*children, checked=False)` | A `[x]` mark followed by its children, toggled by click, Enter or Space | `value.checked` |
+| `TextArea(text="", placeholder="")` | Editor with word/line shortcuts, Shift+arrows selection and a dimmed placeholder | `value.text` |
+| `ProgressBar(progress=0.0)` | A `━━━━━━━━━━` bar, progress between 0 and 1 | `value.progress` |
+
+```python
+Button("Save", on_click=lambda event: save())
+Checkbox("Dark mode", on_change=lambda event: set_theme(event.value))
+name = TextArea(placeholder="your name", height=1, text_wrap=False)
+name.bind("enter", lambda: greet(name.value.text))  # a single-line field
+```
+
+There is no list widget and no "selected" state: build lists from plain widgets and highlight
+items by changing their style (`item.set_style(reverse=True)`), as `examples/notes.py` does.
 
 Common widget API: `id=`, `disabled=`, `focusable=`, `mount(*children)`, `remove()`,
-`clear()`, `find(id)`, `get(id, Type)`, `walk()`, `focus()`, `hidden = True`, `bind(key, fn)`,
-`scroll_to()`, and `region` / `content_region` (screen rectangles after layout).
+`clear()`, `find(id)`, `get(id, Type)`, `walk()`, `focus()`, `click()`, `hidden = True`,
+`bind(key, fn)`, `scroll_to()`, and `region` / `content_region` (screen rectangles after layout).
 
 ## Events, focus and key bindings
 
-- Keys go to the focused widget, then bubble up through its ancestors, then to app bindings.
-  Tab / Shift+Tab move focus if nothing handled the key.
-- Mouse events go to the widget under the pointer and bubble up. A press focuses the nearest
-  focusable widget, and press+release on the same widget is a click.
-- Key names look like `"a"`, `"A"`, `"space"`, `"enter"`, `"escape"`, `"tab"`, `"shift+tab"`,
-  `"up"`, `"pageup"`, `"f5"`, `"ctrl+s"`, `"alt+x"`, `"ctrl+shift+left"`.
+Every widget accepts the same callbacks, which receive an event:
+
+| Callback | Event | Fields |
+| --- | --- | --- |
+| `on_click` | `ClickEvent` | `widget` (clicked), `mouse` (`None` when triggered by the keyboard) |
+| `on_key` | `KeyEvent` | `key`, `char`, `ctrl`, `alt`, `shift` |
+| `on_change` | `ChangeEvent` | `widget` (whose value changed), `name`, `value`, `old` |
+
+- Events bubble up from the focused widget (keys), the widget under the pointer (clicks) or the
+  widget whose value changed. A callback stops the event only by **returning `True`**, so
+  callbacks that just observe are safe.
+- For each key press, at each widget: its key bindings run first, then your `on_key`, then the
+  widget's built-in behaviour. Return `True` from `on_key` to override a built-in. Then come
+  app bindings, and Tab / Shift+Tab move focus if nothing handled the key.
+- A change first runs the widget's built-in reaction (e.g. `TextArea` repaints its text), then
+  your `on_change`, then bubbles: `Column(*checkboxes, on_change=...)` observes the whole group.
+- A mouse press focuses the nearest focusable widget, and press+release on the same widget is
+  a click.
+- Key names look like `"a"`, `"A"`, `"+"`, `"space"`, `"enter"`, `"escape"`, `"tab"`,
+  `"shift+tab"`, `"up"`, `"pageup"`, `"f5"`, `"ctrl+s"`, `"alt+x"`, `"ctrl+shift+left"`,
+  `"ctrl++"`. Modifiers are case-insensitive, `esc`, `return`, `del`, `pgup`, `pgdn` and `plus`
+  are accepted as aliases, and unknown names raise `ValueError`.
 
 ```python
 app.bind("ctrl+q", app.exit)                      # global
@@ -187,10 +237,16 @@ def worker():                                # in another thread
 
 ## Custom widgets
 
-Subclass `Widget`, describe the content size, and draw into the canvas:
+Subclass `Widget`, keep the state in a `Value`, and put the built-in behaviour in the `handle_*`
+methods (`handle_key`, `handle_click`, `handle_change`, `handle_mouse`, `handle_paste`,
+`handle_focus`, `handle_blur`). They run after the user's callbacks (except `handle_change`,
+which runs first) and stop the event unless they return `False`:
 
 ```python
-from pytui import Style, Widget
+from pytui import Style, Value, Widget
+
+class CounterValue(Value):
+    count: int = 0
 
 class Counter(Widget):
     FOCUSABLE = True
@@ -198,30 +254,25 @@ class Counter(Widget):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.value = 0
+        self.value = CounterValue()
 
-    def content_width(self) -> int:
-        return len(f"count: {self.value}")
+    def handle_change(self, event) -> bool:
+        if event.widget is self:
+            self.text = f"count: {event.value}"
+        return False  # let the change bubble up
 
-    def content_height(self, width: int) -> int:
-        return 1
-
-    def render(self, canvas):
-        area = self.content_region
-        canvas.text(area.x, area.y, f"count: {self.value}", self.text_style)
-
-    def on_key(self, event) -> bool:
+    def handle_key(self, event) -> bool:
         if event.key in ("up", "+"):
-            self.value += 1
+            self.value.count += 1
             return True  # handled: stop propagation
         if event.key in ("down", "-"):
-            self.value -= 1
+            self.value.count -= 1
             return True
-        return False
+        return super().handle_key(event)
 ```
 
-Background, border, children and clipping are handled for you. Other hooks are `on_mouse`,
-`on_click`, `on_paste`, `on_focus` and `on_blur`.
+Background, border, text, cursor, children and clipping are handled for you. For content that
+is not text, override `content_width`, `content_height` and `render(canvas)`.
 
 ## Testing your UI
 
@@ -229,9 +280,9 @@ No terminal needed: render to text and simulate input.
 
 ```python
 def test_login_form():
-    name = Input(id="name")
+    name = TextArea(id="name", height=1)
     submitted = []
-    app = App(Box(name, Button("Login", on_press=lambda: submitted.append(name.value))))
+    app = App(Box(name, Button("Login", on_click=lambda e: submitted.append(name.value.text))))
 
     app.render(40, 5)
     app.feed("alice")          # raw terminal input: text, escape sequences, mouse reports
@@ -239,4 +290,14 @@ def test_login_form():
     assert submitted == ["alice"]
     assert "alice" in app.snapshot()
     app.click(0, 1)            # mouse click at screen coordinates
+```
+
+To write frames to a file instead of a terminal, give the app's canvas a `FileScreen`:
+
+```python
+app.canvas.screen = FileScreen("frame.txt")  # colors=True keeps styles as ANSI codes
+app.render(80, 24)
+app.canvas.present()                         # frame.txt now holds the UI
+app.press("tab")
+app.canvas.present()                         # rewritten with the new frame
 ```

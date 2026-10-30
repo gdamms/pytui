@@ -95,35 +95,57 @@ def index_at_cell(text: str, cell: int) -> int:
     return len(text)
 
 
-def wrap(text: str, width: int) -> list[str]:
-    """Word-wrap ``text`` into lines of at most ``width`` cells.
+def clean_text(text: str) -> str:
+    """Normalize line breaks to ``\n`` and expand tabs, as text is stored in widgets."""
+    return text.replace("\r\n", "\n").replace("\r", "\n").expandtabs(4)
+
+
+def wrap_spans(text: str, width: int) -> list[tuple[int, int]]:
+    """Word-wrap ``text`` into lines of at most ``width`` cells, as ``(start, end)`` offsets.
 
     Hard line breaks are kept, words longer than ``width`` are split and
-    whitespace at wrap points is dropped. With ``width <= 0`` only hard line
-    breaks are applied.
+    whitespace at wrap points is left out of the lines. With ``width <= 0``
+    only hard line breaks are applied. ``text`` must not contain tabs.
     """
-    lines: list[str] = []
-    for paragraph in text.expandtabs(4).split("\n"):
+    spans: list[tuple[int, int]] = []
+    offset = 0
+    for paragraph in text.split("\n"):
+        base, offset = offset, offset + len(paragraph) + 1
         if width <= 0:
-            lines.append(paragraph)
+            spans.append((base, base + len(paragraph)))
             continue
-        line, used = "", 0
-        for token in _TOKEN.findall(paragraph):
+        start = end = base
+        used = 0
+        for match in _TOKEN.finditer(paragraph):
+            token = match.group()
+            token_start, token_end = base + match.start(), base + match.end()
             token_width = text_width(token)
             if token[0].isspace():
                 if used + token_width <= width:
-                    line, used = line + token, used + token_width
+                    end, used = token_end, used + token_width
                 else:
-                    lines.append(line)
-                    line, used = "", 0
+                    spans.append((start, end))
+                    start = end = token_end
+                    used = 0
                 continue
-            if used + token_width > width and line:
-                lines.append(line.rstrip())
-                line, used = "", 0
+            if used + token_width > width and end > start:
+                while end > start and text[end - 1].isspace():
+                    end -= 1
+                spans.append((start, end))
+                start = end = token_start
+                used = 0
             while token_width > width:
                 head, token = split_at_width(token, width)
-                lines.append(head)
+                spans.append((token_start, token_start + len(head)))
+                token_start += len(head)
+                start = token_start
                 token_width = text_width(token)
-            line, used = line + token, used + token_width
-        lines.append(line)
-    return lines
+            end, used = token_end, used + token_width
+        spans.append((start, end))
+    return spans
+
+
+def wrap(text: str, width: int) -> list[str]:
+    """Word-wrap ``text`` into lines of at most ``width`` cells (see :func:`wrap_spans`)."""
+    text = text.expandtabs(4)
+    return [text[start:end] for start, end in wrap_spans(text, width)]

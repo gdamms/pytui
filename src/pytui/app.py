@@ -11,13 +11,20 @@ from collections.abc import Callable, Iterator
 from functools import partial
 from typing import Any
 
-from .canvas import Canvas
-from .events import Event, KeyEvent, MouseEvent, PasteEvent, ResizeEvent, normalize_key
-from .input import InputParser
+from .events import (
+    Event,
+    InputParser,
+    KeyEvent,
+    MouseEvent,
+    PasteEvent,
+    ResizeEvent,
+    normalize_key,
+    parse_key,
+)
 from .layout import LayoutEngine
-from .render import paint, widget_at
-from .terminal import SYNC_END, SYNC_START, Terminal
-from .widget import Widget
+from .render import Canvas, paint, widget_at
+from .screen import Terminal, TerminalScreen
+from .widgets import Widget
 
 ESCAPE_TIMEOUT = 0.05
 """Seconds to wait before treating a lone ESC byte as the Escape key."""
@@ -47,7 +54,7 @@ class App:
 
     ::
 
-        app = App(Box(Text("Hello"), Button("Quit", on_press=lambda: app.exit())))
+        app = App(Box("Hello", Button("Quit", on_click=lambda e: app.exit())))
         app.run()
 
     ``ctrl+c`` exits by default; ``tab``/``shift+tab`` move focus.
@@ -74,7 +81,7 @@ class App:
         self._calls: deque[Callable[[], Any]] = deque()
         self._lock = threading.Lock()
         self._terminal: Terminal | None = None
-        self._screen: Canvas | None = None
+        self.canvas = Canvas(*self.size)
         self._rendered = False
         self._running = False
         self._result: Any = None
@@ -90,7 +97,8 @@ class App:
         with Terminal(mouse=self.mouse) as terminal:
             self._terminal = terminal
             self._running = True
-            self._screen = None
+            previous_screen = self.canvas.screen
+            self.canvas.screen = TerminalScreen(terminal)
             try:
                 self.size = terminal.size()
                 self._draw()
@@ -98,6 +106,7 @@ class App:
             finally:
                 self._running = False
                 self._terminal = None
+                self.canvas.screen = previous_screen
         return self._result
 
     def _loop(self, terminal: Terminal) -> None:
@@ -142,13 +151,8 @@ class App:
         return timeout
 
     def _draw(self) -> None:
-        assert self._terminal is not None
-        canvas = self.render()
-        prefix = "\x1b[0m\x1b[H\x1b[2J" if self._screen is None else ""
-        output = canvas.render(self._screen)
-        if prefix or output:
-            self._terminal.write(SYNC_START + prefix + output + SYNC_END)
-        self._screen = canvas
+        self.render()
+        self.canvas.present()
 
     # --- timers & threads ---------------------------------------------------
 
@@ -202,9 +206,9 @@ class App:
             return
         previous, self.focused = self.focused, widget
         if previous is not None:
-            previous.on_blur()
+            previous.handle_blur()
         if widget is not None:
-            widget.on_focus()
+            widget.handle_focus()
             self._reveal = widget
 
     def focus_next(self, step: int = 1) -> None:
@@ -240,23 +244,27 @@ class App:
             self._dispatch_mouse(event)
         elif isinstance(event, PasteEvent):
             for widget in self._enabled_chain(self.focused):
-                if widget.on_paste(event):
+                if widget.handle_paste(event) is not False:
                     break
         elif isinstance(event, ResizeEvent):
             self.size = (event.width, event.height)
-            self._screen = None
+            if self.canvas.screen is not None:
+                self.canvas.screen.invalidate()
 
     def _enabled_chain(self, widget: Widget | None) -> Iterator[Widget]:
         return (w for w in _chain(widget) if not w.is_disabled)
 
     def _dispatch_key(self, event: KeyEvent) -> None:
+        """For each widget from the focused one up: bindings, ``on_key``, ``handle_key``."""
         key = event.key
         for widget in self._enabled_chain(self.focused or self.root):
             handler = widget._bindings.get(key)
             if handler is not None:
                 handler()
                 return
-            if widget.on_key(event):
+            if widget.on_key is not None and widget.on_key(event) is True:
+                return
+            if widget.handle_key(event) is not False:
                 return
         handler = self._bindings.get(key)
         if handler is not None:
@@ -278,7 +286,7 @@ class App:
                     break
             self._pressed = target if event.button == "left" else None
         for widget in self._enabled_chain(target):
-            if widget.on_mouse(event):
+            if widget.handle_mouse(event) is not False:
                 break
         if event.action == "up" and event.button in ("left", None):
             pressed, self._pressed = self._pressed, None
@@ -288,9 +296,8 @@ class App:
                     clicked = pressed
                 elif target in pressed.ancestors():
                     clicked = target
-            for widget in self._enabled_chain(clicked):
-                if widget.on_click(event):
-                    break
+            if clicked is not None:
+                clicked.click(event)
 
     # --- rendering ----------------------------------------------------------
 
@@ -336,10 +343,12 @@ class App:
         for child in widget.children:
             self._update_styles(child, widget, focus_path, hover_path)
 
-    def render(self, width: int | None = None, height: int | None = None) -> Canvas:
-        """Lay out and draw the UI into a new canvas (no terminal needed).
+    def render(self, width: int | None = None, height: int | None = None) -> None:
+        """Lay out and draw the UI into :attr:`canvas` (no terminal needed).
 
-        Useful for tests: ``app.render(40, 10).lines()``.
+        Useful for tests: ``app.render(40, 10)`` then ``app.canvas.lines()``. To display
+        it without a terminal, give the canvas a screen:
+        ``app.canvas.screen = FileScreen(path)`` then ``app.canvas.present()``.
         """
         if width is not None and height is not None:
             self.size = (width, height)
@@ -363,10 +372,11 @@ class App:
             if self._scroll_into_view(widget):
                 self._compose(w, h)
 
-        canvas = Canvas(w, h)
+        canvas = self.canvas
+        canvas.resize(w, h)
+        canvas.clear()
         paint(self.root, canvas)
         self._rendered = True
-        return canvas
 
     def _compose(self, width: int, height: int) -> None:
         focus_path = {id(w) for w in _chain(self.focused)}
@@ -404,7 +414,8 @@ class App:
 
     def snapshot(self, width: int | None = None, height: int | None = None) -> str:
         """Render to plain text (trailing spaces stripped), handy for tests."""
-        return "\n".join(line.rstrip() for line in self.render(width, height).lines())
+        self.render(width, height)
+        return "\n".join(line.rstrip() for line in self.canvas.lines())
 
     def feed(self, data: str) -> None:
         """Simulate terminal input (keys, escape sequences, mouse reports) without a terminal."""
@@ -420,7 +431,7 @@ class App:
     def press(self, *keys: str) -> None:
         """Simulate key presses by binding name, e.g. ``app.press("tab", "enter", "ctrl+s")``."""
         for key in keys:
-            *mods, name = normalize_key(key).split("+") if key != "+" else ["+"]
+            mods, name = parse_key(key)
             char = name if len(name) == 1 else (" " if name == "space" else None)
             event = KeyEvent(
                 name, char, ctrl="ctrl" in mods, alt="alt" in mods, shift="shift" in mods
