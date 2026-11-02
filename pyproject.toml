@@ -1,6 +1,6 @@
 [project]
 name = "gdamms-pytui"
-version = "0.2.0"
+version = "0.3.0"
 description = "Build terminal user interfaces in Python with a flexbox-style layout engine."
 readme = "README.md"
 authors = [{ name = "gdamms", email = "damguillotin@gmail.com" }]

@@ -16,8 +16,8 @@ jobs:
   wiki:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
       - run: uv run --group docs sphinx-build -W --keep-going -b markdown docs docs/_build/wiki
       - name: Push to the wiki
         env:
