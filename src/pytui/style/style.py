@@ -29,8 +29,10 @@ Spacing = int | tuple[int, int] | tuple[int, int, int, int] | Edges | None
 _PERCENT = re.compile(r"^\d+(\.\d+)?%$")
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, repr=False)
 class Style:
+    """How a widget looks and is laid out. Unset fields are ``None``; combine with ``|``."""
+
     # --- sizing -----------------------------------------------------------
     width: Size = None
     height: Size = None
@@ -136,6 +138,9 @@ class Style:
             if mine[name] is not None and theirs[name] is not None:
                 values[name] = mine[name] | theirs[name]
         return _build(values)
+
+    def __repr__(self) -> str:
+        return f"Style({', '.join(f'{n}={v!r}' for n, v in self.set_fields().items())})"
 
     def set_fields(self) -> dict[str, Any]:
         """The fields explicitly set on this style."""

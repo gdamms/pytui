@@ -8,9 +8,11 @@ from .widget import Widget
 
 
 class Button(Widget):
-    """A focusable widget for which Enter and Space count as a click::
+    """A focusable widget for which Enter and Space count as a click.
 
-    Button("Save", on_click=lambda event: save())
+    Example::
+
+        Button("Save", on_click=lambda event: save())
     """
 
     FOCUSABLE = True
