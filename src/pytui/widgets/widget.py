@@ -19,6 +19,12 @@ if TYPE_CHECKING:
 W = TypeVar("W", bound="Widget")
 
 _SCROLL_KEYS = {"up", "down", "left", "right", "pageup", "pagedown", "home", "end"}
+_WHEEL = {
+    "scroll_up": (0, -1),
+    "scroll_down": (0, 1),
+    "scroll_left": (-1, 0),
+    "scroll_right": (1, 0),
+}
 
 
 class Widget:
@@ -42,6 +48,14 @@ class Widget:
     DEFAULT_STYLE: ClassVar[Style] = Style()
     """Base style for the class, overridden by the instance ``style``."""
     FOCUSABLE: ClassVar[bool] = False
+    SCROLL_STEP_X: ClassVar[int] = 1
+    """Columns scrolled per wheel step (Shift+wheel or a horizontal wheel)."""
+    SCROLL_STEP_Y: ClassVar[int] = 1
+    """Rows scrolled per wheel step."""
+    FAST_SCROLL_STEP_X: ClassVar[int] = 10
+    """Columns scrolled per wheel step while Alt is held."""
+    FAST_SCROLL_STEP_Y: ClassVar[int] = 5
+    """Rows scrolled per wheel step while Alt is held."""
 
     def __init__(
         self,
@@ -419,7 +433,10 @@ class Widget:
 
     def handle_key(self, event: KeyEvent) -> bool:
         """Built-in key handling; return False to let the key go to the parent."""
-        if self.computed.overflow != "scroll" or event.key not in _SCROLL_KEYS:
+        if event.key not in _SCROLL_KEYS:
+            return False
+        horizontal = event.key in ("left", "right")
+        if not self.computed.scrolls(horizontal):
             return False
         page = max(1, self.content_region.height - 1)
         dx, dy = {
@@ -435,20 +452,31 @@ class Widget:
         self.scroll_by(dx, dy)
         return True
 
+    def wheel_delta(self, event: MouseEvent) -> tuple[int, int] | None:
+        """Cells a wheel event scrolls by, ``None`` for other events.
+
+        Shift turns the vertical wheel into a horizontal one; Alt scrolls faster.
+        """
+        direction = _WHEEL.get(event.action)
+        if direction is None:
+            return None
+        dx, dy = direction
+        if event.shift:
+            dx, dy = dy, dx
+        if event.alt:
+            return dx * self.FAST_SCROLL_STEP_X, dy * self.FAST_SCROLL_STEP_Y
+        return dx * self.SCROLL_STEP_X, dy * self.SCROLL_STEP_Y
+
     def handle_mouse(self, event: MouseEvent) -> bool:
         """Built-in mouse handling; return False to let the event go to the parent."""
-        if self.computed.overflow != "scroll":
+        delta = self.wheel_delta(event)
+        if delta is None:
             return False
-        delta = {
-            "scroll_up": (0, -3),
-            "scroll_down": (0, 3),
-            "scroll_left": (-3, 0),
-            "scroll_right": (3, 0),
-        }
-        if event.action not in delta:
+        dx, dy = delta
+        if not self.computed.scrolls(dx != 0):
             return False
         before = (self.scroll_x, self.scroll_y)
-        self.scroll_by(*delta[event.action])
+        self.scroll_by(dx, dy)
         return (self.scroll_x, self.scroll_y) != before
 
     def handle_click(self, event: ClickEvent) -> bool:

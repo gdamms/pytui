@@ -390,19 +390,22 @@ class App:
         top, bottom, left, right = region.y, region.bottom, region.x, region.right
         moved = False
         for ancestor in widget.ancestors():
-            if ancestor.computed.overflow != "scroll":
+            s = ancestor.computed
+            if not s.scrolls(True) and not s.scrolls(False):
                 continue
             view = ancestor.content_region
             dy = 0
-            if bottom > view.bottom:
-                dy = bottom - view.bottom
-            if top - dy < view.y:
-                dy = top - view.y
+            if s.scrolls(False):
+                if bottom > view.bottom:
+                    dy = bottom - view.bottom
+                if top - dy < view.y:
+                    dy = top - view.y
             dx = 0
-            if right > view.right:
-                dx = right - view.right
-            if left - dx < view.x:
-                dx = left - view.x
+            if s.scrolls(True):
+                if right > view.right:
+                    dx = right - view.right
+                if left - dx < view.x:
+                    dx = left - view.x
             old = (ancestor.scroll_x, ancestor.scroll_y)
             ancestor.scroll_by(dx, dy)
             dx, dy = ancestor.scroll_x - old[0], ancestor.scroll_y - old[1]

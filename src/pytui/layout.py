@@ -34,11 +34,21 @@ def resolve_length(value: Size, reference: int | None) -> int | None:
 def insets(style: ComputedStyle) -> Edges:
     """Space between a widget's border box and its content box."""
     border = 0 if style.border == "none" else 1
-    gutter = 1 if style.overflow == "scroll" and not border else 0
+    right = 1 if style.scrolls(False) and not border else 0  # vertical scrollbar gutter
+    bottom = 1 if style.scrolls(True) and not border else 0  # horizontal scrollbar gutter
     pad = style.padding
     return Edges(
-        pad.top + border, pad.right + border + gutter, pad.bottom + border, pad.left + border
+        pad.top + border,
+        pad.right + border + right,
+        pad.bottom + border + bottom,
+        pad.left + border,
     )
+
+
+def _wraps(widget: Widget) -> bool:
+    """Whether flow children wrap onto several lines (``"wrap"`` on the main axis)."""
+    s = widget.computed
+    return (s.overflow_x if s.direction == "row" else s.overflow_y) == "wrap"
 
 
 def _margins(widget: Widget, horizontal: bool) -> tuple[int, int]:
@@ -168,14 +178,16 @@ class LayoutEngine:
         width = self._explicit(widget, True, ref)
         if width is None:
             s = widget.computed
-            content = widget.content_width()
-            flow, _, _ = _partition(widget)
-            if flow:
-                outer = [self.preferred_width(c) + sum(_margins(c, True)) for c in flow]
-                if s.direction == "row":
-                    content = max(content, sum(outer) + s.gap * (len(flow) - 1))
-                else:
-                    content = max(content, max(outer))
+            content = 0
+            if not s.scrolls(True):  # a scrolling axis takes no size from its content
+                content = widget.content_width()
+                flow, _, _ = _partition(widget)
+                if flow:
+                    outer = [self.preferred_width(c) + sum(_margins(c, True)) for c in flow]
+                    if s.direction == "row":
+                        content = max(content, sum(outer) + s.gap * (len(flow) - 1))
+                    else:
+                        content = max(content, max(outer))
             width = self._clamp(widget, True, content + self._insets(widget).horizontal, ref)
         self._widths[key] = width
         return width
@@ -191,18 +203,25 @@ class LayoutEngine:
             s = widget.computed
             e = self._insets(widget)
             content_width = max(0, width - e.horizontal)
-            content = widget.content_height(content_width)
             flow, _, _ = _partition(widget)
-            if flow:
+            if s.scrolls(False):  # a scrolling axis takes no size from its content
+                content = 0
+            else:
+                content = widget.content_height(content_width)
+            if flow and not s.scrolls(False):
                 if s.direction == "row":
-                    widths = self._main_sizes(widget, flow, content_width, None)
-                    content = max(
-                        content,
-                        max(
-                            self._cross_size(widget, c, w, None) + sum(_margins(c, False))
-                            for c, w in zip(flow, widths, strict=True)
-                        ),
-                    )
+                    lines = [flow]
+                    if _wraps(widget):
+                        bases = self._bases(widget, flow, content_width, None)
+                        lines = self._lines(widget, flow, bases, content_width)
+                    total = s.gap * (len(lines) - 1)
+                    for line in lines:
+                        widths = self._main_sizes(widget, line, content_width, None)
+                        total += max(
+                            self._cross_size(widget, c, w, None, None) + sum(_margins(c, False))
+                            for c, w in zip(line, widths, strict=True)
+                        )
+                    content = max(content, total)
                 else:
                     heights = self._main_sizes(widget, flow, None, content_width)
                     margins = sum(sum(_margins(c, False)) for c in flow)
@@ -218,16 +237,24 @@ class LayoutEngine:
         return parent.computed.align_items if align == "auto" else align
 
     def _cross_size(
-        self, parent: Widget, child: Widget, main: int | None, available: int | None
+        self,
+        parent: Widget,
+        child: Widget,
+        main: int | None,
+        available: int | None,
+        stretch: int | None,
     ) -> int:
-        """Child size on the parent's cross axis (height in a row, width in a column)."""
+        """Child size on the parent's cross axis (height in a row, width in a column).
+
+        ``stretch`` is the line size a ``stretch``-aligned child fills (``None``: its own size).
+        """
         horizontal = parent.computed.direction == "column"
         explicit = self._explicit(child, horizontal, available)
         if explicit is not None:
             return explicit
         margin = sum(_margins(child, horizontal))
-        if self._align(parent, child) == "stretch" and available is not None:
-            return self._clamp(child, horizontal, available - margin, available)
+        if self._align(parent, child) == "stretch" and stretch is not None:
+            return self._clamp(child, horizontal, stretch - margin, available)
         if horizontal:
             width = self.preferred_width(child, available)
             if available is not None:
@@ -236,27 +263,59 @@ class LayoutEngine:
         assert main is not None
         return self.preferred_height(child, main, available)
 
+    def _bases(
+        self, parent: Widget, flow: list[Widget], available: int | None, cross: int | None
+    ) -> list[int]:
+        """Children's natural (max-content) sizes on the parent's main axis."""
+        if parent.computed.direction == "row":
+            return [self.preferred_width(c, available) for c in flow]
+        bases = []
+        for child in flow:
+            width = self._cross_size(parent, child, None, cross, cross)
+            bases.append(self.preferred_height(child, width, available))
+        return bases
+
+    def _lines(
+        self, parent: Widget, flow: list[Widget], bases: list[int], space: int
+    ) -> list[list[Widget]]:
+        """Break ``flow`` greedily into lines of at most ``space`` (at least one item each)."""
+        row = parent.computed.direction == "row"
+        gap = parent.computed.gap
+        lines: list[list[Widget]] = []
+        line: list[Widget] = []
+        used = 0
+        for child, base in zip(flow, bases, strict=True):
+            outer = base + sum(_margins(child, row))
+            if line and used + gap + outer > space:
+                lines.append(line)
+                line, used = [], 0
+            used += outer + (gap if line else 0)
+            line.append(child)
+        if line:
+            lines.append(line)
+        return lines
+
     def _main_sizes(
         self, parent: Widget, flow: list[Widget], available: int | None, cross: int | None
     ) -> list[int]:
         """Children sizes on the main axis, flexed to fit ``available`` when known."""
         s = parent.computed
         row = s.direction == "row"
-        bases: list[int] = []
-        margins = 0
-        for child in flow:
-            if row:
-                bases.append(self.preferred_width(child, available))
-            else:
-                width = self._cross_size(parent, child, None, cross)
-                bases.append(self.preferred_height(child, width, available))
-            margins += sum(_margins(child, row))
+        bases = self._bases(parent, flow, available, cross)
         if available is None or not flow:
             return bases
+        scrolls = s.scrolls(row)
+        if not scrolls:
+            # Growing children start from their minimum, like CSS ``flex: 1``.
+            bases = [
+                self._limits(c, row, available)[0] if c.computed.flex_grow > 0 else b
+                for c, b in zip(flow, bases, strict=True)
+            ]
+        margins = sum(sum(_margins(c, row)) for c in flow)
         free = available - sum(bases) - margins - s.gap * (len(flow) - 1)
         if free > 0:
             factors = [float(c.computed.flex_grow) for c in flow]
-        elif free < 0 and s.overflow != "scroll":
+        elif free < 0 and not scrolls:
             factors = [c.computed.flex_shrink * b for c, b in zip(flow, bases, strict=True)]
         else:
             return bases
@@ -287,42 +346,70 @@ class LayoutEngine:
         main_space, cross_space = (
             (content.width, content.height) if row else (content.height, content.width)
         )
-        mains = self._main_sizes(widget, flow, main_space, cross_space)
-        crosses = [
-            self._cross_size(widget, c, m, cross_space) for c, m in zip(flow, mains, strict=True)
-        ]
-        main_margins = [_margins(c, row) for c in flow]
-        cross_margins = [_margins(c, not row) for c in flow]
-
-        used = sum(mains) + sum(a + b for a, b in main_margins) + s.gap * max(0, len(flow) - 1)
-        cross_extent = max(
-            (a + size + b for (a, b), size in zip(cross_margins, crosses, strict=True)), default=0
-        )
-        virtual_w, virtual_h = (used, cross_extent) if row else (cross_extent, used)
-        if s.overflow != "visible":
-            text_w, text_h = widget.text_size(content.width)
-            virtual_w = max(virtual_w, text_w)
-            virtual_h = max(virtual_h, text_h, widget.content_height(content.width))
-            widget.virtual_width, widget.virtual_height = virtual_w, virtual_h
-            widget.scroll_x = max(0, min(widget.scroll_x, virtual_w - content.width))
-            widget.scroll_y = max(0, min(widget.scroll_y, virtual_h - content.height))
-            widget.reveal_cursor()
-        else:
-            widget.virtual_width, widget.virtual_height = content.width, content.height
-            widget.scroll_x = widget.scroll_y = 0
-
-        offset, spacing = self._justify(s.justify_content, max(0, main_space - used), len(flow))
-        position = float(offset)
-        for i, child in enumerate(flow):
-            before, after = main_margins[i]
-            cross_before, cross_after = cross_margins[i]
-            main, cross = mains[i], crosses[i]
-            slack = max(0, cross_space - cross_before - cross - cross_after)
-            align = self._align(widget, child)
-            cross_offset = cross_before + (
-                slack // 2 if align == "center" else slack if align == "end" else 0
+        wrap = _wraps(widget)
+        lines = [flow] if flow else []
+        if wrap and flow:
+            lines = self._lines(
+                widget, flow, self._bases(widget, flow, main_space, cross_space), main_space
             )
-            main_offset = math.floor(position + before + 0.5)
+
+        # (child, main offset, cross offset, main size, cross size) relative to the content box
+        items: list[tuple[Widget, int, int, int, int]] = []
+        used = cross_used = 0
+        for line in lines:
+            mains = self._main_sizes(widget, line, main_space, cross_space)
+            main_margins = [_margins(c, row) for c in line]
+            cross_margins = [_margins(c, not row) for c in line]
+            line_cross = cross_space
+            if wrap:
+                line_cross = max(
+                    self._cross_size(widget, c, m, cross_space, None) + sum(margin)
+                    for c, m, margin in zip(line, mains, cross_margins, strict=True)
+                )
+            crosses = [
+                self._cross_size(widget, c, m, cross_space, line_cross)
+                for c, m in zip(line, mains, strict=True)
+            ]
+            line_used = sum(mains) + sum(a + b for a, b in main_margins) + s.gap * (len(line) - 1)
+            extent = max(a + size + b for (a, b), size in zip(cross_margins, crosses, strict=True))
+            offset, spacing = self._justify(
+                s.justify_content, max(0, main_space - line_used), len(line)
+            )
+            position = float(offset)
+            for i, child in enumerate(line):
+                before, after = main_margins[i]
+                cross_before, cross_after = cross_margins[i]
+                main, cross = mains[i], crosses[i]
+                slack = max(0, line_cross - cross_before - cross - cross_after)
+                align = self._align(widget, child)
+                cross_offset = (
+                    cross_used
+                    + cross_before
+                    + (slack // 2 if align == "center" else slack if align == "end" else 0)
+                )
+                main_offset = math.floor(position + before + 0.5)
+                items.append((child, main_offset, cross_offset, main, cross))
+                position += before + main + after + s.gap + spacing
+            used = max(used, line_used)
+            cross_used += (line_cross if wrap else extent) + s.gap
+        cross_extent = max(0, cross_used - s.gap)
+
+        virtual_w, virtual_h = (used, cross_extent) if row else (cross_extent, used)
+        text_w, text_h = widget.text_size(content.width)
+        if s.overflow_x != "visible":
+            virtual_w = max(virtual_w, text_w)
+            widget.scroll_x = max(0, min(widget.scroll_x, virtual_w - content.width))
+        else:
+            virtual_w, widget.scroll_x = content.width, 0
+        if s.overflow_y != "visible":
+            virtual_h = max(virtual_h, text_h, widget.content_height(content.width))
+            widget.scroll_y = max(0, min(widget.scroll_y, virtual_h - content.height))
+        else:
+            virtual_h, widget.scroll_y = content.height, 0
+        widget.virtual_width, widget.virtual_height = virtual_w, virtual_h
+        widget.reveal_cursor()
+
+        for child, main_offset, cross_offset, main, cross in items:
             if row:
                 x, y, w, h = main_offset, cross_offset, main, cross
             else:
@@ -330,7 +417,6 @@ class LayoutEngine:
             self._place(
                 child, Rect(content.x + x - widget.scroll_x, content.y + y - widget.scroll_y, w, h)
             )
-            position += before + main + after + s.gap + spacing
 
         self._place_absolute(widget, absolute)
 

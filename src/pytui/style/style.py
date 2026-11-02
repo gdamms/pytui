@@ -72,6 +72,10 @@ class Style:
     display: Literal["flex", "none"] | None = None
     visibility: Literal["visible", "hidden"] | None = None
     overflow: Literal["hidden", "visible", "scroll"] | None = None
+    """Shorthand setting ``overflow_x`` and ``overflow_y`` (unless set explicitly)."""
+    overflow_x: Literal["hidden", "visible", "scroll", "wrap"] | None = None
+    overflow_y: Literal["hidden", "visible", "scroll", "wrap"] | None = None
+    """``"wrap"`` on the main axis flows children onto new lines (rows) or columns."""
 
     # --- text (inherited by children) -------------------------------------
     fg: Color = None
@@ -96,6 +100,11 @@ class Style:
             value = getattr(self, name)
             if value is not None and value not in choices:
                 raise ValueError(f"invalid {name}: {value!r} (expected one of {choices})")
+        if self.overflow is not None:
+            for name in ("overflow_x", "overflow_y"):
+                if getattr(self, name) is None:
+                    object.__setattr__(self, name, self.overflow)
+            object.__setattr__(self, "overflow", None)
         for name in _SIZE_FIELDS:
             value = getattr(self, name)
             if value is None or value == "auto":
@@ -185,7 +194,8 @@ class ComputedStyle:
 
     display: Literal["flex", "none"]
     visibility: Literal["visible", "hidden"]
-    overflow: Literal["hidden", "visible", "scroll"]
+    overflow_x: Literal["hidden", "visible", "scroll", "wrap"]
+    overflow_y: Literal["hidden", "visible", "scroll", "wrap"]
 
     fg: Color
     bg: Color
@@ -207,6 +217,10 @@ class ComputedStyle:
         changes = {n: v for n, v in other.set_fields().items() if n in _COMPUTED_SET}
         return replace(self, **changes)
 
+    def scrolls(self, horizontal: bool) -> bool:
+        """Whether the widget scrolls on the x (``horizontal``) or y axis."""
+        return (self.overflow_x if horizontal else self.overflow_y) == "scroll"
+
 
 def _build(values: dict[str, object]) -> Style:
     """Create a Style without re-running validation (values are already valid)."""
@@ -223,10 +237,11 @@ def _build_computed(values: dict[str, object]) -> ComputedStyle:
 
 _FIELD_NAMES = tuple(f.name for f in fields(Style))
 _STATE_FIELDS = frozenset({"hover", "focus", "focus_within", "disabled"})
-_COMPUTED_NAMES = tuple(n for n in _FIELD_NAMES if n not in _STATE_FIELDS)
+_SHORTHANDS = frozenset({"overflow"})
+_COMPUTED_NAMES = tuple(n for n in _FIELD_NAMES if n not in _STATE_FIELDS | _SHORTHANDS)
 _COMPUTED_SET = frozenset(_COMPUTED_NAMES)
 assert _COMPUTED_NAMES == tuple(f.name for f in fields(ComputedStyle)), (
-    "ComputedStyle fields must mirror Style fields (minus state variants), in order"
+    "ComputedStyle fields must mirror Style fields (minus state variants and shorthands), in order"
 )
 _SIZE_FIELDS = ("width", "height", "min_width", "min_height", "max_width", "max_height")
 _INHERITED = frozenset(
@@ -261,6 +276,8 @@ _CHOICES: dict[str, tuple[str, ...]] = {
     "display": ("flex", "none"),
     "visibility": ("visible", "hidden"),
     "overflow": ("hidden", "visible", "scroll"),
+    "overflow_x": ("hidden", "visible", "scroll", "wrap"),
+    "overflow_y": ("hidden", "visible", "scroll", "wrap"),
     "text_align": ("left", "center", "right"),
 }
 
@@ -279,7 +296,8 @@ DEFAULTS = Style(
     position="relative",
     display="flex",
     visibility="visible",
-    overflow="hidden",
+    overflow_x="hidden",
+    overflow_y="hidden",
     bold=False,
     dim=False,
     italic=False,

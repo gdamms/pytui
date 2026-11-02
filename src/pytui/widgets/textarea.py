@@ -171,8 +171,9 @@ class TextArea(Widget):
             self.cursor = Cursor(anchor, index)
             self._goal_x = None
             return True
-        if event.action in ("scroll_up", "scroll_down"):
-            self.scroll_by(dy=-3 if event.action == "scroll_up" else 3)
+        delta = self.wheel_delta(event)
+        if delta is not None:
+            self.scroll_by(*delta)
             return True
         return False
 
